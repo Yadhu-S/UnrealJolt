@@ -44,6 +44,12 @@ Plugin that brings [Jolt Physics](https://github.com/jrouwe/JoltPhysics) into un
 
 ### UJoltSkeletalMeshComponent
 - UJoltSkeletalMeshComponent extends USkeletalMeshComponent to add jolt specific functionality (Browse JoltSkeletalMeshComponent.h to see the available functions)
+- Modify the physics asset as required through the editor
+  - ![SkelMeshAdj](Resources/Screenshots/SS_UjoltSkeletalMesh.png)
+  - Compound shapes are also supported
+- Adjust the options as required 
+  - ![Options](Resources/Screenshots/SS_SkelMeshOpt.png)
+  - Adjust the "Visual Offset" to align the visual mesh with the physics body
 
 ### Heightmaps 
 
@@ -51,12 +57,11 @@ Plugin that brings [Jolt Physics](https://github.com/jrouwe/JoltPhysics) into un
 
 - **Landscapes** and **LandscapeSplines** are cooked automatically when you **Play in Editor**.  
   - This may be a chore if you work with many levels, playing a level at least one time in editor (will work on it).  
-- **Heightmaps must be cooked** in advance. They are not added dynamically like other physics bodies.  
 - A `JoltData` directory is always generated during cooking and **must be included when packaging your project**.
 - #### ⚠️ Function for reading landscape spline data is not exposed by default in UE
 
 #### ✅ Enabling Landscape Spline Cooking
-1. `Engine/Source/Runtime/Landscape/Classes/LandscapeSplineSegment.h`  
+1. Modify `Engine/Source/Runtime/Landscape/Classes/LandscapeSplineSegment.h`
    and add `LANDSCAPE_API` to the `GetLocalMeshComponents()` declaration to fix link errors
 2. In `UnrealJolt/Source/UnrealJolt/UnrealJolt.Build.cs`, uncomment: 
 	`PublicDefinitions.Add("JOLT_PLUGIN_LANDSCAPE_API_MODIFIED");`
@@ -68,7 +73,7 @@ To ensure deterministic simulation with Jolt Physics across platforms, follow th
 For builds:
 
 - On **Windows (MSVC)**, add `FPSemantics = FPSemanticsMode.Precise;` to `<ProjectName>Target.cs` and `<ProjectName>Editor.Target.cs`.  
-- On **Linux (Clang/GCC)**, add `AdditionalCompilerArguments += " -ffp-model=precise -ffp-contract=off";` to the same files.  
+- On **Linux (Clang)**, add `AdditionalCompilerArguments += " -ffp-model=precise -ffp-contract=off";` to the same files.  
 
 Because these options differ from Unreal defaults (`LinuxToolChain.cs`, `VCToolChain.cs`), create a custom build config or apply the changes consistently across both game and editor builds by modifying:  
 `UnrealClient.Target.cs`, `UnrealEditor.Target.cs`, `UnrealGame.Target.cs`, and `UnrealServer.Target.cs`.

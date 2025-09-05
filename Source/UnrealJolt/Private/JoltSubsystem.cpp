@@ -581,7 +581,6 @@ void UJoltSubsystem::ExtractPhysicsGeometry(const FTransform& xformSoFar, const 
 		// X scales radius, Z scales height
 		const JPH::CapsuleShape* capsule = GetCapsuleCollisionShape(Capsule.Radius * scale.X, Capsule.Length * scale.Z, physicsMaterial);
 		joltShape = capsule;
-		// Capsules are in Z in UE,  so roll -90
 		if (compoundShapeSettings)
 		{
 			compoundShapeSettings->AddShape(

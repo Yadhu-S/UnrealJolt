@@ -103,43 +103,43 @@ public:
 	void ExtractSplineMeshGeometry(const UBodySetup* splineMeshBodySetup, const FTransform& splineMeshTransform);
 #endif
 
-	UFUNCTION(BlueprintCallable, Category = "Jolt Physics")
+	UFUNCTION(BlueprintCallable, Category = "Jolt Physics", BlueprintPure = false)
 	void JoltSetLinearAndAngularVelocity(const int64& bodyID, const FVector& velocity, const FVector& angularVelocity) const;
 
-	UFUNCTION(BlueprintCallable, Category = "Jolt Physics")
+	UFUNCTION(BlueprintCallable, Category = "Jolt Physics", BlueprintPure = false)
 	void JoltGetPhysicsState(const int64& bodyID, FTransform& transform, FTransform& transformCOM, FVector& velocity, FVector& angularVelocity) const;
 
-	UFUNCTION(BlueprintCallable, Category = "Jolt Physics")
+	UFUNCTION(BlueprintCallable, Category = "Jolt Physics", BlueprintPure = false)
 	void JoltAddCentralImpulse(const int64& bodyID, const FVector& impulse) const;
 
-	UFUNCTION(BlueprintCallable, Category = "Jolt Physics")
+	UFUNCTION(BlueprintCallable, Category = "Jolt Physics", BlueprintPure = false)
 	void JoltAddTorque(const int64& bodyID, const FVector& torque) const;
 
-	UFUNCTION(BlueprintCallable, Category = "Jolt Physics")
-	void JoltAddForce(const int64& bodyID, const FVector& torque) const;
+	UFUNCTION(BlueprintCallable, Category = "Jolt Physics", BlueprintPure = false)
+	void JoltAddForce(const int64& bodyID, const FVector& force) const;
 
-	UFUNCTION(BlueprintCallable, Category = "Jolt Physics")
+	UFUNCTION(BlueprintCallable, Category = "Jolt Physics", BlueprintPure = false)
 	void JoltAddImpulseAtLocation(const int64& bodyID, const FVector& impulse, const FVector& locationWS) const;
 
-	UFUNCTION(BlueprintCallable, Category = "Jolt Physics")
+	UFUNCTION(BlueprintCallable, Category = "Jolt Physics", BlueprintPure = false)
 	void JoltAddForceAtLocation(const int64& bodyID, const FVector& force, const FVector& locationWS) const;
 
-	UFUNCTION(BlueprintCallable, Category = "Jolt Physics")
+	UFUNCTION(BlueprintCallable, Category = "Jolt Physics", BlueprintPure = false)
 	FVector JoltGetVelocityAt(const int64& bodyID, const FVector& locationWS) const;
 
-	UFUNCTION(BlueprintCallable, Category = "Jolt Physics")
+	UFUNCTION(BlueprintCallable, Category = "Jolt Physics", BlueprintPure = false)
 	void JoltSetPhysicsLocationAndRotation(const int32& bodyID, const FVector& locationWS, const FQuat& rotationWS) const;
 
-	UFUNCTION(BlueprintCallable, Category = "Jolt Physics")
+	UFUNCTION(BlueprintCallable, Category = "Jolt Physics", BlueprintPure = false)
 	void JoltSetLinearVelocity(const int& bodyID, const FVector& velocity) const;
 
-	UFUNCTION(BlueprintCallable, Category = "Jolt Physics")
+	UFUNCTION(BlueprintCallable, Category = "Jolt Physics", BlueprintPure = false)
 	void JoltSetPhysicsLocation(const int& bodyID, const FVector& locationWS) const;
 
-	UFUNCTION(BlueprintCallable, Category = "Jolt Physics")
+	UFUNCTION(BlueprintCallable, Category = "Jolt Physics", BlueprintPure = false)
 	void JoltSetPhysicsRotation(const int64& bodyID, const FQuat& rotationWS) const;
 
-	UFUNCTION(BlueprintCallable, Category = "Jolt Physics")
+	UFUNCTION(BlueprintCallable, Category = "Jolt Physics", BlueprintPure = false)
 	void JoltGetPhysicsTransform(const int64& bodyID, FTransform& transform) const;
 
 	UFUNCTION(BlueprintCallable, Category = "Jolt Physics")
