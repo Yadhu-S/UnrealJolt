@@ -36,9 +36,12 @@ public:
 		return JPH::Vec3(Sv.X, Sv.Z, Sv.Y);
 	}
 
-	inline static FVector ToUESize(const JPH::Vec3& Sv)
+	inline static FVector ToUESize(const JPH::Vec3& Sv, const bool& adjustScale = true)
 	{
-		return FVector(Sv.GetX(), Sv.GetZ(), Sv.GetY()) * JOLT_TO_WORLD_SCALE;
+		if (adjustScale)
+			return FVector(Sv.GetX(), Sv.GetZ(), Sv.GetY()) * JOLT_TO_WORLD_SCALE;
+
+		return FVector(Sv.GetX(), Sv.GetZ(), Sv.GetY());
 	}
 
 	inline static FVector ToUEPos(const JPH::RVec3& V, const FVector& WorldOrigin = FVector(0))

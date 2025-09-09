@@ -99,6 +99,8 @@ void UJoltSubsystem::Deinitialize()
 		hf = nullptr;
 	}
 
+	delete ContactListener;
+
 	/*
 	for (const JPH::Body* b : SavedBodies)
 	{
@@ -359,10 +361,8 @@ void UJoltSubsystem::InitPhysicsSystem(
 		*ObjectVsObjectLayerFilter);
 
 	BodyInterface = &MainPhysicsSystem->GetBodyInterface();
-	/* FIXME: Memory Leak
-	   ContactListener = new UEJoltCallBackContactListener();
-	   MainPhysicsSystem->SetContactListener(ContactListener);
-	   */
+	ContactListener = new UEJoltCallBackContactListener();
+	MainPhysicsSystem->SetContactListener(ContactListener);
 	// Spawn jolt worker
 	UE_LOG(JoltSubSystemLogs, Log, TEXT("Jolt subsystem init complete"));
 }
@@ -1002,7 +1002,7 @@ void UJoltSubsystem::RayCastShapeNarrowPhase(const UShapeComponent* shape, const
 		nullptr); // TODO: add support to return material
 }
 
-TArray<int32> UJoltSubsystem::CastShape(const UShapeComponent* shape, const FVector& shapeScale, const FTransform& shapeCOM, const FVector& offset)
+TArray<FCastShapeResult> UJoltSubsystem::CastShape(const UShapeComponent* shape, const FVector& shapeScale, const FTransform& shapeCOM, const FVector& offset)
 {
 
 	const JPH::Shape* joltShape = ProcessShapeElement(shape);
@@ -1033,12 +1033,12 @@ TArray<int32> UJoltSubsystem::CastShape(const UShapeComponent* shape, const FVec
 		JPH::RVec3::sZero(),
 		collector);
 
-	TArray<int32> foundBodyIDs = TArray<int32>();
+	TArray<FCastShapeResult> shapeCastResult = TArray<FCastShapeResult>();
 	for (JPH::CollideShapeResult& val : collector.mHits)
 	{
-		foundBodyIDs.Add(val.mBodyID2.GetIndexAndSequenceNumber());
+		shapeCastResult.Add({ val.mBodyID2.GetIndexAndSequenceNumber(), JoltHelpers::ToUESize(val.mContactPointOn2), JoltHelpers::ToUESize(val.mContactPointOn1) });
 	}
-	return foundBodyIDs;
+	return shapeCastResult;
 }
 
 void UJoltSubsystem::RayCastNarrowPhase(const FVector& start, const FVector& end, NarrowPhaseQueryCallback& hitCallback) const

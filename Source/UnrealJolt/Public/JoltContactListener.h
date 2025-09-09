@@ -6,18 +6,20 @@
 
 #include "JoltContactListener.generated.h"
 
-USTRUCT()
+USTRUCT(BlueprintType)
 struct FContactInfo
 {
 	GENERATED_USTRUCT_BODY();
 
 	FContactInfo() = default;
 
-	FContactInfo(int32 BodyID1, int32 BodyID2, const FVector& BodyID1ContactLocation, const FVector& BodyID2ContactLocation)
+	FContactInfo(int32 BodyID1, int32 BodyID2, const FVector& BodyID1ContactLocation, const FVector& BodyID2ContactLocation, float NormalImpulse, FVector NormalDir)
 		: BodyID1(BodyID1)
 		, BodyID2(BodyID2)
 		, BodyID1ContactLocation(BodyID1ContactLocation)
-		, BodyID2ContactLocation(BodyID2ContactLocation) {}
+		, BodyID2ContactLocation(BodyID2ContactLocation)
+		, NormalImpulse(NormalImpulse)
+		, NormalDir(NormalDir) {}
 
 	int32 BodyID1;
 
@@ -26,6 +28,10 @@ struct FContactInfo
 	FVector BodyID1ContactLocation;
 
 	FVector BodyID2ContactLocation;
+
+	float NormalImpulse;
+
+	FVector NormalDir;
 };
 
 class UEJoltCallBackContactListener : public JPH::ContactListener
@@ -44,6 +50,8 @@ public:
 	{
 		return Queue.Dequeue(OutItem);
 	}
+
+	TQueue<FContactInfo, EQueueMode::Mpsc>* GetContactQueue() { return &Queue; };
 
 private:
 	TQueue<FContactInfo, EQueueMode::Mpsc> Queue = TQueue<FContactInfo, EQueueMode::Mpsc>();

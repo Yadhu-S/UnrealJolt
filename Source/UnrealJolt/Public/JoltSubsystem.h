@@ -11,6 +11,7 @@
 #include "Subsystems/WorldSubsystem.h"
 #include "JoltFilters.h"
 #include "Delegates/DelegateCombinations.h"
+#include "UObject/ObjectMacros.h"
 
 #ifdef JPH_DEBUG_RENDERER
 	#include "JoltDebugRenderer.h"
@@ -29,7 +30,20 @@ DECLARE_DYNAMIC_DELEGATE_FourParams(FNarrowPhaseQueryDelegate, const FVector&, h
 struct FFrameHistory
 {
 	FTransform PreviousFrame;
+
 	FTransform CurrentFrame;
+};
+
+USTRUCT(BlueprintType)
+struct FCastShapeResult
+{
+	GENERATED_USTRUCT_BODY()
+
+	uint32 ContactBodyID;
+
+	FVector ContactLocationFoundShape;
+
+	FVector ContactLocationCastedShape;
 };
 
 UCLASS()
@@ -65,7 +79,7 @@ public:
 	 * Sweep a shape to detect collision
 	 */
 	UFUNCTION(BlueprintCallable, Category = "Jolt Physics")
-	TArray<int32> CastShape(const UShapeComponent* shape, const FVector& shapeScale, const FTransform& shapeCOM, const FVector& offset);
+	TArray<FCastShapeResult> CastShape(const UShapeComponent* shape, const FVector& shapeScale, const FTransform& shapeCOM, const FVector& offset);
 
 	/*
 	 * Fetch the centre of mass of the body
@@ -145,6 +159,11 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Jolt Physics")
 	void SetTimeScale(double deltaTime);
 
+	UFUNCTION(BlueprintCallable, Category = "Jolt Physics")
+	bool GetContactInfo(FContactInfo& contactInfo) const { return ContactListener->Consume(contactInfo); };
+
+	UEJoltCallBackContactListener* GetContactListener() { return ContactListener; };
+
 	void JoltSetLinearAndAngularVelocity(const JPH::BodyID& bodyID, const FVector& velocity, const FVector& angularVelocity) const;
 
 	void JoltGetPhysicsState(const JPH::BodyID& bodyID, FTransform& transform, FTransform& transformCOM, FVector& velocity, FVector& angularVelocity) const;
@@ -186,9 +205,6 @@ public:
 
 	// Saves the current physics states of bodies (filtered with SaveStateFilterImpl)
 	void SaveState(TArray<uint8>& serverPhysicsState, SaveStateFilter* saveFilterImpl) const;
-
-	/*This consumes contact info from a MPSC queue*/
-	bool GetContactInfo(FContactInfo& contactInfo) const { return ContactListener->Consume(contactInfo); };
 
 	/* This will automatically be called in the tick function
 	 * for use cases where you just need to step the physics only
