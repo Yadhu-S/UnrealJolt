@@ -108,10 +108,10 @@ public:
 	 * Has no interaction with the physics system
 	 * Used to apply visual transform set in editor to the jolt transform
 	 */
-	UFUNCTION(BlueprintCallable, Category = "Jolt Physics|Skeletal Mesh",BlueprintPure = false)
+	UFUNCTION(BlueprintCallable, Category = "Jolt Physics|Skeletal Mesh", BlueprintPure = false)
 	void JoltSetVisualTransform(FTransform& joltTransformWS);
 
-	UFUNCTION(BlueprintCallable, Category = "Jolt Physics|Skeletal Mesh",BlueprintPure = false)
+	UFUNCTION(BlueprintCallable, Category = "Jolt Physics|Skeletal Mesh", BlueprintPure = false)
 	void SetBodyID(int32 bodyID) { OwnBodyID = JPH::BodyID(bodyID); };
 
 	virtual void
@@ -123,6 +123,7 @@ public:
 	SaveStateFilter* Filter = nullptr; // TODO: Fix memory leak
 
 	void SaveState(TArray<uint8>& serverPhysicsState);
+
 
 private:
 	UPROPERTY()

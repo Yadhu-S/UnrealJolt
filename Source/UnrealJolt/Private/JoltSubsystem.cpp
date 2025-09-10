@@ -402,13 +402,18 @@ int64 UJoltSubsystem::AddStaticBody(const AActor* Body, const float& Friction, c
 
 void UJoltSubsystem::ExtractPhysicsGeometry(const AActor* actor, PhysicsGeometryCallback callback)
 {
-	TInlineComponentArray<UActorComponent*, 20> Components;
-	const FTransform							actorTransform = actor->GetActorTransform();
+	TInlineComponentArray<UStaticMeshComponent*, 20> Components;
+	const FTransform								 actorTransform = actor->GetActorTransform();
 
 	actor->GetComponents(UStaticMeshComponent::StaticClass(), Components);
-	for (UActorComponent*& Comp : Components)
+	for (UStaticMeshComponent*& Comp : Components)
 	{
-		ExtractPhysicsGeometry(Cast<UStaticMeshComponent>(Comp), actorTransform, callback);
+		if (Comp->IsSimulatingPhysics())
+		{
+			UE_LOG(JoltSubSystemLogs, Error, TEXT("'Simulate physics' turned on for : '%s' which is marked as a jolt body, disabling chaos"), *Comp->GetOwner()->GetActorNameOrLabel());
+			Comp->SetSimulatePhysics(false);
+		}
+		ExtractPhysicsGeometry(Comp, actorTransform, callback);
 	}
 }
 

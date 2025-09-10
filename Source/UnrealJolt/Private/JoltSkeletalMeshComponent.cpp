@@ -9,6 +9,12 @@
 
 void UJoltSkeletalMeshComponent::AddOwnPhysicsAsset()
 {
+	if (IsSimulatingPhysics()) // Chaos physics, disable it
+	{
+		UE_LOG(JoltSubSystemLogs, Warning, TEXT("UJoltSkeletalMeshComponent::AddOwnPhysicsAsset: 'Simulate Physics'"));
+		SetSimulatePhysics(false);
+	}
+
 	if (JoltSubSystem == nullptr)
 	{
 		UE_LOG(JoltSubSystemLogs, Warning, TEXT("UJoltSkeletalMeshComponent::AddOwnPhysicsAsset: jolt subsystem empty"));
