@@ -46,6 +46,8 @@ struct FCastShapeResult
 	FVector ContactLocationCastedShape;
 };
 
+typedef const std::function<void(const FVector&, const FVector&, const bool&, const uint32&, const UPhysicalMaterial*)> NarrowPhaseQueryCallback;
+
 UCLASS()
 class UNREALJOLT_API UJoltSubsystem : public UTickableWorldSubsystem
 {
@@ -190,10 +192,9 @@ public:
 
 	void JoltGetPhysicsTransform(const JPH::BodyID& bodyID, FTransform& transform) const;
 
-	typedef const std::function<void(const FVector&, const FVector&, const bool&, const uint32&, const UPhysicalMaterial*)> NarrowPhaseQueryCallback;
 
 	// This will first perform a broadphase, and then a narrow phase query
-	void RayCastNarrowPhase(const FVector& start, const FVector& end, NarrowPhaseQueryCallback& hitCallback) const;
+	void RayCastNarrowPhase(const FVector& start, const FVector& end, NarrowPhaseQueryCallback& hitCallback, const JPH::BodyFilter& bodyFilter = {}) const;
 
 	void RayCastShapeNarrowPhase(const UShapeComponent* shape, const FVector& shapeScale, const FTransform& shapeCOM, const FVector& offset, NarrowPhaseQueryCallback& hitCallback);
 

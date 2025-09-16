@@ -1046,14 +1046,14 @@ TArray<FCastShapeResult> UJoltSubsystem::CastShape(const UShapeComponent* shape,
 	return shapeCastResult;
 }
 
-void UJoltSubsystem::RayCastNarrowPhase(const FVector& start, const FVector& end, NarrowPhaseQueryCallback& hitCallback) const
+void UJoltSubsystem::RayCastNarrowPhase(const FVector& start, const FVector& end, NarrowPhaseQueryCallback& hitCallback, const JPH::BodyFilter& bodyFilter) const
 {
 
 	JPH::RayCastSettings	 settings;
 	FVector					 dir = end - start;
 	JPH::RRayCast			 ray{ JoltHelpers::ToJoltPos(start), JoltHelpers::ToJoltVec3(dir) };
 	FirstRayCastHitCollector collector(*MainPhysicsSystem, ray);
-	MainPhysicsSystem->GetNarrowPhaseQuery().CastRay(ray, settings, collector);
+	MainPhysicsSystem->GetNarrowPhaseQuery().CastRay(ray, settings, collector, {}, {}, bodyFilter);
 
 	const UPhysicalMaterial* UEMat = nullptr;
 	if (collector.mHasHit)

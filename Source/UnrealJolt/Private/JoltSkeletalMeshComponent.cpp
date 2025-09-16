@@ -64,8 +64,8 @@ void UJoltSkeletalMeshComponent::AddOwnPhysicsAsset()
 
 		if (bIncludeInSnapshot)
 		{
-			Filter = new SaveStateFilter();
-			Filter->AddToBodyIDAllowList(OwnBodyID);
+			StateFilter = new SaveStateFilter();
+			StateFilter->AddToBodyIDAllowList(OwnBodyID);
 		}
 
 		JoltSubSystem->DynamicBodyIDActorMap.Add(&OwnBodyID, GetOwner());
@@ -76,15 +76,17 @@ void UJoltSkeletalMeshComponent::AddOwnPhysicsAsset()
 	{
 		JoltSubSystem->ExtractPhysicsGeometry(GetOwner()->GetActorTransform(), skeletalBodySetup, callback);
 	}
+
+	BodyFilter = new JPH::IgnoreSingleBodyFilter(OwnBodyID);
 }
 
 void UJoltSkeletalMeshComponent::SaveState(TArray<uint8>& serverPhysicsState)
 {
-	if (Filter == nullptr)
+	if (StateFilter == nullptr)
 	{
 		return;
 	}
-	JoltSubSystem->SaveState(serverPhysicsState, Filter);
+	JoltSubSystem->SaveState(serverPhysicsState, StateFilter);
 }
 
 void UJoltSkeletalMeshComponent::TickComponent(float DeltaTime, enum ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction)
@@ -111,10 +113,24 @@ void UJoltSkeletalMeshComponent::BeginPlay()
 	LoadJoltSubsystem(joltSubSystem);
 }
 
+void UJoltSkeletalMeshComponent::OnComponentDestroyed(bool bDestroyingHierarchy)
+{
+	Super::OnComponentDestroyed(bDestroyingHierarchy);
+	delete BodyFilter;
+	delete StateFilter;
+}
+
 void UJoltSkeletalMeshComponent::LoadJoltSubsystem(UJoltSubsystem* joltSubsystem)
 {
 	JoltSubSystem = joltSubsystem;
 	AddOwnPhysicsAsset();
+}
+
+void UJoltSkeletalMeshComponent::RayCastNarrowPhaseIgnoreSelf(const FVector& start, const FVector& end, NarrowPhaseQueryCallback& hitCallback) const
+{
+	check(JoltSubSystem != nullptr);
+	check(BodyFilter != nullptr);
+	JoltSubSystem->RayCastNarrowPhase(start, end, hitCallback, *BodyFilter);
 }
 
 void UJoltSkeletalMeshComponent::JoltSetLinearAndAngularVelocity(const FVector& velocity, const FVector& angularVelocity) const

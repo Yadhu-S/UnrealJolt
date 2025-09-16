@@ -104,6 +104,8 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Jolt Physics|Skeletal Mesh", BlueprintPure = false)
 	void JoltReadPhysicsTransform(FTransform& outTransform) const;
 
+	void RayCastNarrowPhaseIgnoreSelf(const FVector& start, const FVector& end, NarrowPhaseQueryCallback& hitCallback) const;
+
 	/* Will simply set the location of the visual mesh only
 	 * Has no interaction with the physics system
 	 * Used to apply visual transform set in editor to the jolt transform
@@ -120,10 +122,13 @@ public:
 
 	virtual void BeginPlay() override;
 
-	SaveStateFilter* Filter = nullptr; // TODO: Fix memory leak
+	virtual void OnComponentDestroyed(bool bDestroyingHierarchy);
+
+	SaveStateFilter* StateFilter = nullptr;
+
+	JPH::BodyFilter* BodyFilter = nullptr;
 
 	void SaveState(TArray<uint8>& serverPhysicsState);
-
 
 private:
 	UPROPERTY()
