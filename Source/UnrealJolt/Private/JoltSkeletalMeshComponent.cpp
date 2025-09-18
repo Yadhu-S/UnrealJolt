@@ -1,11 +1,15 @@
 // Fill out your copyright notice in the Description page of Project Settings.
 
+#define IS_UE_56 ENGINE_MAJOR_VERSION == 5 && ENGINE_MINOR_VERSION == 6
+
 #include "JoltSkeletalMeshComponent.h"
 #include "Engine/World.h"
 #include "UnrealJolt/Helpers.h"
 #include "Misc/AssertionMacros.h"
 #include "PhysicsEngine/PhysicsAsset.h"
-#include "PhysicsEngine/SkeletalBodySetup.h"
+#if IS_UE_56
+	#include "PhysicsEngine/SkeletalBodySetup.h"
+#endif
 
 void UJoltSkeletalMeshComponent::AddOwnPhysicsAsset()
 {
