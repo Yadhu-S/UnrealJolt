@@ -7,6 +7,13 @@
 
 #include "JoltContactListener.generated.h"
 
+UENUM()
+enum class EContactPhase : uint8
+{
+	Added,
+	Persisted,
+};
+
 USTRUCT(BlueprintType)
 struct FContactInfo
 {
@@ -14,7 +21,7 @@ struct FContactInfo
 
 	FContactInfo() = default;
 
-	FContactInfo(int32 BodyID1, int32 BodyID2, const FVector& BodyID1ContactLocation, const FVector& BodyID2ContactLocation, float NormalImpulse, FVector NormalDir, TEnumAsByte<EPhysicalSurface> Surface1 = SurfaceType_Default, TEnumAsByte<EPhysicalSurface> Surface2 = SurfaceType_Default, const FVector& LinearVelocity1 = FVector::ZeroVector, const FVector& LinearVelocity2 = FVector::ZeroVector)
+	FContactInfo(int32 BodyID1, int32 BodyID2, const FVector& BodyID1ContactLocation, const FVector& BodyID2ContactLocation, float NormalImpulse, FVector NormalDir, TEnumAsByte<EPhysicalSurface> Surface1 = SurfaceType_Default, TEnumAsByte<EPhysicalSurface> Surface2 = SurfaceType_Default, const FVector& LinearVelocity1 = FVector::ZeroVector, const FVector& LinearVelocity2 = FVector::ZeroVector, EContactPhase Phase = EContactPhase::Added)
 		: BodyID1(BodyID1)
 		, BodyID2(BodyID2)
 		, BodyID1ContactLocation(BodyID1ContactLocation)
@@ -24,35 +31,46 @@ struct FContactInfo
 		, Surface1(Surface1)
 		, Surface2(Surface2)
 		, LinearVelocity1(LinearVelocity1)
-		, LinearVelocity2(LinearVelocity2) {}
+		, LinearVelocity2(LinearVelocity2)
+		, Phase(Phase) {}
 
+	UPROPERTY(BlueprintReadOnly, Category = "Jolt Physics")
 	int32 BodyID1;
 
+	UPROPERTY(BlueprintReadOnly, Category = "Jolt Physics")
 	int32 BodyID2;
 
+	UPROPERTY(BlueprintReadOnly, Category = "Jolt Physics")
 	FVector BodyID1ContactLocation;
 
+	UPROPERTY(BlueprintReadOnly, Category = "Jolt Physics")
 	FVector BodyID2ContactLocation;
 
+	UPROPERTY(BlueprintReadOnly, Category = "Jolt Physics")
 	float NormalImpulse;
 
+	UPROPERTY(BlueprintReadOnly, Category = "Jolt Physics")
 	FVector NormalDir;
 
 	// Surface type of body1 at the contact sub-shape — resolved from the
 	// Jolt JoltPhysicsMaterial bound to that shape (originating from the UE
 	// UPhysicalMaterial assigned to the body setup). Defaults to
 	// SurfaceType_Default if the shape has no material.
+	UPROPERTY(BlueprintReadOnly, Category = "Jolt Physics")
 	TEnumAsByte<EPhysicalSurface> Surface1 = SurfaceType_Default;
 
 	// Surface type of body2 at the contact sub-shape. Same source as Surface1.
+	UPROPERTY(BlueprintReadOnly, Category = "Jolt Physics")
 	TEnumAsByte<EPhysicalSurface> Surface2 = SurfaceType_Default;
 
-	// Linear velocity of each body at OnContactAdded time (UE units, cm/s).
-	// Used by the FX layer to derive impact-vs-glancing and slide speed for
-	// Metasound parameters. Static bodies are zero.
+	UPROPERTY(BlueprintReadOnly, Category = "Jolt Physics")
 	FVector LinearVelocity1 = FVector::ZeroVector;
 
+	UPROPERTY(BlueprintReadOnly, Category = "Jolt Physics")
 	FVector LinearVelocity2 = FVector::ZeroVector;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Jolt Physics")
+	EContactPhase Phase = EContactPhase::Added;
 };
 
 class UEJoltCallBackContactListener : public JPH::ContactListener

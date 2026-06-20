@@ -2,8 +2,28 @@
 #include "JoltPhysicsMaterial.h"
 #include "UnrealJolt/Helpers.h"
 
+static constexpr float ScrapePersistMinTangentialSpeed = 0.35f; // ~35 cm/s
+static constexpr float ScrapePersistMinTangentialSpeedSq = ScrapePersistMinTangentialSpeed * ScrapePersistMinTangentialSpeed;
+
+static EPhysicalSurface ResolveContactSurface(const JPH::Body& Body, const JPH::SubShapeID& SubShapeID)
+{
+	const JPH::Shape* Shape = Body.GetShape();
+	if (Shape == nullptr)
+	{
+		return SurfaceType_Default;
+	}
+	const JPH::PhysicsMaterial* Material = Shape->GetMaterial(SubShapeID);
+	if (Material == nullptr || Material == JPH::PhysicsMaterial::sDefault.GetPtr())
+	{
+		// go default if we got no material
+		return SurfaceType_Default;
+	}
+	return static_cast<const JoltPhysicsMaterial*>(Material)->SurfaceType;
+}
+
 JPH::ValidateResult UEJoltCallBackContactListener::OnContactValidate(const JPH::Body& inBody1, const JPH::Body& inBody2, JPH::RVec3Arg inBaseOffset, const JPH::CollideShapeResult& inCollisionResult)
 {
+	// TODO: 
 	return ContactListener::OnContactValidate(inBody1, inBody2, inBaseOffset, inCollisionResult);
 }
 
@@ -13,38 +33,26 @@ void UEJoltCallBackContactListener::OnContactAdded(const JPH::Body& inBody1, con
 	JPH::CollisionEstimationResult result;
 	EstimateCollisionResponse(inBody1, inBody2, inManifold, result, ioSettings.mCombinedFriction, ioSettings.mCombinedRestitution);
 
-	// Resolve EPhysicalSurface for each body at the contact sub-shape. The shape
-	// stores a JoltPhysicsMaterial (subclass of JPH::PhysicsMaterial) whose
-	// SurfaceType field mirrors the source UPhysicalMaterial — populated when
-	// UJoltSubsystem built the shape from the body setup.
-	const JPH::Shape*			  shape1 = inBody1.GetShape();
-	const JPH::Shape*			  shape2 = inBody2.GetShape();
-	const JPH::PhysicsMaterial*	  mat1 = shape1 ? shape1->GetMaterial(inManifold.mSubShapeID1) : nullptr;
-	const JPH::PhysicsMaterial*	  mat2 = shape2 ? shape2->GetMaterial(inManifold.mSubShapeID2) : nullptr;
-	const EPhysicalSurface surface1Raw = mat1 ? static_cast<const JoltPhysicsMaterial*>(mat1)->SurfaceType : EPhysicalSurface::SurfaceType_Default;
-	const EPhysicalSurface surface2Raw = mat2 ? static_cast<const JoltPhysicsMaterial*>(mat2)->SurfaceType : EPhysicalSurface::SurfaceType_Default;
-	const TEnumAsByte<EPhysicalSurface> surface1(surface1Raw);
-	const TEnumAsByte<EPhysicalSurface> surface2(surface2Raw);
-
-	// Snapshot linear velocities at contact time. Static bodies are zero, so
-	// vehicle-vs-world vRel collapses to the vehicle's own velocity.
-	const FVector linVel1 = JoltHelpers::ToUESize(inBody1.GetLinearVelocity());
-	const FVector linVel2 = JoltHelpers::ToUESize(inBody2.GetLinearVelocity());
+	const TEnumAsByte<EPhysicalSurface> surface1(ResolveContactSurface(inBody1, inManifold.mSubShapeID1));
+	const TEnumAsByte<EPhysicalSurface> surface2(ResolveContactSurface(inBody2, inManifold.mSubShapeID2));
 
 	for (uint8 i = 0; const JPH::CollisionEstimationResult::Impulse& impulse : result.mImpulses)
 	{
+		const JPH::RVec3 contactPoint1 = inManifold.GetWorldSpaceContactPointOn1(i);
+		const JPH::RVec3 contactPoint2 = inManifold.GetWorldSpaceContactPointOn2(i);
+
 		Queue.Enqueue(
 			FContactInfo(
 				inBody1.GetID().GetIndexAndSequenceNumber(),
 				inBody2.GetID().GetIndexAndSequenceNumber(),
-				JoltHelpers::ToUEPos(inManifold.GetWorldSpaceContactPointOn1(i)),
-				JoltHelpers::ToUEPos(inManifold.GetWorldSpaceContactPointOn2(i)),
+				JoltHelpers::ToUEPos(contactPoint1),
+				JoltHelpers::ToUEPos(contactPoint2),
 				JoltHelpers::ToUESize(impulse.mContactImpulse),
 				JoltHelpers::ToUESize(inManifold.mWorldSpaceNormal, false),
 				surface1,
 				surface2,
-				linVel1,
-				linVel2)
+				JoltHelpers::ToUESize(inBody1.GetPointVelocity(contactPoint1)),
+				JoltHelpers::ToUESize(inBody2.GetPointVelocity(contactPoint2)))
 
 		);
 
@@ -54,8 +62,43 @@ void UEJoltCallBackContactListener::OnContactAdded(const JPH::Body& inBody1, con
 
 void UEJoltCallBackContactListener::OnContactPersisted(const JPH::Body& inBody1, const JPH::Body& inBody2, const JPH::ContactManifold& inManifold, JPH::ContactSettings& ioSettings)
 {
-	// return ContactListener::OnContactPersisted(inBody1, inBody2, inManifold, ioSettings);
+	if (inManifold.mRelativeContactPointsOn1.empty())
+	{
+		return;
+	}
+
+	const JPH::RVec3 contactPoint1 = inManifold.GetWorldSpaceContactPointOn1(0);
+	const JPH::RVec3 contactPoint2 = inManifold.GetWorldSpaceContactPointOn2(0);
+
+	const JPH::Vec3 pointVel1 = inBody1.GetPointVelocity(contactPoint1);
+	const JPH::Vec3 pointVel2 = inBody2.GetPointVelocity(contactPoint2);
+
+	// Skip resting contacts — only sliding contacts produce scrape FX.
+	const JPH::Vec3 relVel = pointVel1 - pointVel2;
+	const JPH::Vec3 tangentialVel = relVel - inManifold.mWorldSpaceNormal * relVel.Dot(inManifold.mWorldSpaceNormal);
+	if (tangentialVel.LengthSq() < ScrapePersistMinTangentialSpeedSq)
+	{
+		return;
+	}
+
+	const TEnumAsByte<EPhysicalSurface> surface1(ResolveContactSurface(inBody1, inManifold.mSubShapeID1));
+	const TEnumAsByte<EPhysicalSurface> surface2(ResolveContactSurface(inBody2, inManifold.mSubShapeID2));
+
+	Queue.Enqueue(
+		FContactInfo(
+			inBody1.GetID().GetIndexAndSequenceNumber(),
+			inBody2.GetID().GetIndexAndSequenceNumber(),
+			JoltHelpers::ToUEPos(contactPoint1),
+			JoltHelpers::ToUEPos(contactPoint2),
+			0.f, // no impulse for a persisted/resting contact
+			JoltHelpers::ToUESize(inManifold.mWorldSpaceNormal, false),
+			surface1,
+			surface2,
+			JoltHelpers::ToUESize(pointVel1),
+			JoltHelpers::ToUESize(pointVel2),
+			EContactPhase::Persisted));
 }
 
 void UEJoltCallBackContactListener::OnContactRemoved(const JPH::SubShapeIDPair& inSubShapePair) {
+	// TODO: 
 };
