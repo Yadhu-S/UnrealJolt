@@ -2,14 +2,11 @@
 
 #include "JoltSettings.h"
 
-namespace
-{
-	const FName StaticLayerName(TEXT("Static"));
-	const FName DynamicLayerName(TEXT("Dynamic"));
+static const FName StaticLayerName(TEXT("Static"));
+static const FName DynamicLayerName(TEXT("Dynamic"));
 
-	constexpr int32 MaxBroadphaseLayerCount = 255; // Jolt's JPH::BroadPhaseLayer is a uint8
-	constexpr int32 MaxObjectLayerCount = 65535;   // Jolt's JPH::ObjectLayer is a uint16
-} // namespace
+constexpr int32 MaxBroadphaseLayerCount = 255; // Jolt's JPH::BroadPhaseLayer is a uint8
+constexpr int32 MaxObjectLayerCount = 65535;   // Jolt's JPH::ObjectLayer is a uint16
 
 UJoltSettings::UJoltSettings(const FObjectInitializer& obj)
 {
