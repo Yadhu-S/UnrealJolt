@@ -271,6 +271,9 @@ public:
 	// of UJoltSubsystem. Not BlueprintCallable.
 	JPH::BodyInterface* GetBodyInterface() const { return BodyInterface; }
 	JPH::PhysicsSystem* GetPhysicsSystem() const { return MainPhysicsSystem; }
+
+	const JPH::ObjectLayerPairFilter* GetObjectLayerPairFilter() const { return ObjectVsObjectLayerFilter; }
+
 	const JPH::BodyID*	AddDynamicBodyForExternalOwner(
 		const JPH::BodyID& bodyID,
 		const JPH::Shape*  shape,
