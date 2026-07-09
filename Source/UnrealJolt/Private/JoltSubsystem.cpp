@@ -239,7 +239,7 @@ void UJoltSubsystem::AddAllJoltActors(const UWorld* World)
 
 void UJoltSubsystem::Tick(float deltaSeconds)
 {
-	TRACE_CPUPROFILER_EVENT_SCOPE_STR("JoltSubsystem_Tick");
+	TRACE_CPUPROFILER_EVENT_SCOPE(UJoltSubsystem::Tick);
 	Super::Tick(deltaSeconds);
 
 	if (JoltWorker == nullptr)
@@ -1431,7 +1431,6 @@ void UJoltSubsystem::DrawDebugLines() const
 {
 	if (!JoltSettings->bEnableDebugRenderer)
 	{
-		JoltDebugRendererImpl->OnDebugRenderDisabled();
 		return;
 	}
 	if (MainPhysicsSystem == nullptr || DrawSettings == nullptr || JoltDebugRendererImpl == nullptr)
