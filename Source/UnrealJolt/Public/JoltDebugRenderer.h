@@ -43,8 +43,18 @@ class UEJoltDebugRenderer final : public JPH::DebugRendererSimple
 
 		UEJoltBodyDrawFilter DrawFilter;
 
+		bool	  bDrawingStaticsPersistent = false;
+		bool	  bStaticsDrawn = false;
+		JPH::uint CachedBodyCount = 0;
+		bool	  bCachedDrawStatic = false;
+		bool	  bCachedDrawHeightField = false;
+
 		bool EnsureWorld();
-		void UpdateCameraPosition();
+
+		bool ShouldRedrawStatics(JPH::PhysicsSystem* PhysicsSystem, const UJoltSettings* JoltSettings) const;
+		void CacheStaticState(JPH::PhysicsSystem* PhysicsSystem, const UJoltSettings* JoltSettings);
+		void DrawStaticBodies(JPH::PhysicsSystem* PhysicsSystem, const JPH::BodyManager::DrawSettings& Settings, const UJoltSettings* JoltSettings);
+		void DrawDynamicBodies(JPH::PhysicsSystem* PhysicsSystem, const JPH::BodyManager::DrawSettings& Settings, const UJoltSettings* JoltSettings);
 
 	public:
 		UEJoltDebugRenderer(UWorld* world);

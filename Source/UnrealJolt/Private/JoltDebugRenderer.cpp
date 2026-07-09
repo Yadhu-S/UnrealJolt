@@ -1,7 +1,6 @@
 #include "JoltDebugRenderer.h"
 
 #include "DrawDebugHelpers.h"
-#include "GameFramework/PlayerController.h"
 
 bool UEJoltDebugRenderer::EnsureWorld()
 {
@@ -20,28 +19,56 @@ bool UEJoltDebugRenderer::EnsureWorld()
 	return false;
 }
 
-void UEJoltDebugRenderer::UpdateCameraPosition()
-{
-	if (!EnsureWorld())
-	{
-		return;
-	}
-
-	auto* PlayerController = World->GetFirstPlayerController();
-	if (!PlayerController)
-	{
-		return;
-	}
-
-	FVector	 ViewLocation;
-	FRotator ViewRotation;
-	PlayerController->GetPlayerViewPoint(ViewLocation, ViewRotation);
-	SetCameraPos(JoltHelpers::ToJoltPos(ViewLocation));
-}
-
 UEJoltDebugRenderer::UEJoltDebugRenderer(UWorld* world)
 	: World(world)
 {
+}
+
+bool UEJoltDebugRenderer::ShouldRedrawStatics(JPH::PhysicsSystem* PhysicsSystem, const UJoltSettings* JoltSettings) const
+{
+	if (!bStaticsDrawn)
+	{
+		return true;
+	}
+
+	if (bCachedDrawStatic != JoltSettings->bDebugDrawStaticBodies || bCachedDrawHeightField != JoltSettings->bDebugDrawHeightFields)
+	{
+		return true;
+	}
+
+	return CachedBodyCount != PhysicsSystem->GetNumBodies();
+}
+
+void UEJoltDebugRenderer::CacheStaticState(JPH::PhysicsSystem* PhysicsSystem, const UJoltSettings* JoltSettings)
+{
+	bStaticsDrawn = true;
+	CachedBodyCount = PhysicsSystem->GetNumBodies();
+	bCachedDrawStatic = JoltSettings->bDebugDrawStaticBodies;
+	bCachedDrawHeightField = JoltSettings->bDebugDrawHeightFields;
+}
+
+void UEJoltDebugRenderer::DrawStaticBodies(JPH::PhysicsSystem* PhysicsSystem, const JPH::BodyManager::DrawSettings& Settings, const UJoltSettings* JoltSettings)
+{
+	FlushPersistentDebugLines(World);
+
+	DrawFilter.bDrawStatic = JoltSettings->bDebugDrawStaticBodies;
+	DrawFilter.bDrawDynamic = false;
+	DrawFilter.bDrawKinematic = false;
+	DrawFilter.bDrawHeightField = JoltSettings->bDebugDrawHeightFields;
+
+	bDrawingStaticsPersistent = true;
+	PhysicsSystem->DrawBodies(Settings, this, &DrawFilter);
+	bDrawingStaticsPersistent = false;
+}
+
+void UEJoltDebugRenderer::DrawDynamicBodies(JPH::PhysicsSystem* PhysicsSystem, const JPH::BodyManager::DrawSettings& Settings, const UJoltSettings* JoltSettings)
+{
+	DrawFilter.bDrawStatic = false;
+	DrawFilter.bDrawDynamic = JoltSettings->bDebugDrawDynamicBodies;
+	DrawFilter.bDrawKinematic = JoltSettings->bDebugDrawKinematicBodies;
+	DrawFilter.bDrawHeightField = false;
+
+	PhysicsSystem->DrawBodies(Settings, this, &DrawFilter);
 }
 
 void UEJoltDebugRenderer::DrawBodiesFiltered(JPH::PhysicsSystem* PhysicsSystem, const JPH::BodyManager::DrawSettings& Settings, const UJoltSettings* JoltSettings)
@@ -51,30 +78,24 @@ void UEJoltDebugRenderer::DrawBodiesFiltered(JPH::PhysicsSystem* PhysicsSystem, 
 		return;
 	}
 
-	UpdateCameraPosition();
-
-	bool bWantStatics = JoltSettings->bDebugDrawStaticBodies || JoltSettings->bDebugDrawHeightFields;
-
-	// Draw all bodies every frame with transient rendering
+	const bool bWantStatics = JoltSettings->bDebugDrawStaticBodies || JoltSettings->bDebugDrawHeightFields;
 	if (bWantStatics)
 	{
-		DrawFilter.bDrawStatic = JoltSettings->bDebugDrawStaticBodies;
-		DrawFilter.bDrawDynamic = false;
-		DrawFilter.bDrawKinematic = false;
-		DrawFilter.bDrawHeightField = JoltSettings->bDebugDrawHeightFields;
-
-		PhysicsSystem->DrawBodies(Settings, this, &DrawFilter);
+		if (ShouldRedrawStatics(PhysicsSystem, JoltSettings))
+		{
+			DrawStaticBodies(PhysicsSystem, Settings, JoltSettings);
+			CacheStaticState(PhysicsSystem, JoltSettings);
+		}
+	}
+	else if (bStaticsDrawn)
+	{
+		FlushPersistentDebugLines(World);
+		bStaticsDrawn = false;
 	}
 
-	// Draw dynamic/kinematic bodies every frame
 	if (JoltSettings->bDebugDrawDynamicBodies || JoltSettings->bDebugDrawKinematicBodies)
 	{
-		DrawFilter.bDrawStatic = false;
-		DrawFilter.bDrawDynamic = JoltSettings->bDebugDrawDynamicBodies;
-		DrawFilter.bDrawKinematic = JoltSettings->bDebugDrawKinematicBodies;
-		DrawFilter.bDrawHeightField = false;
-
-		PhysicsSystem->DrawBodies(Settings, this, &DrawFilter);
+		DrawDynamicBodies(PhysicsSystem, Settings, JoltSettings);
 	}
 
 	NextFrame();
@@ -91,7 +112,7 @@ void UEJoltDebugRenderer::DrawLine(JPH::RVec3Arg inFrom, JPH::RVec3Arg inTo, JPH
 		JoltHelpers::ToUEPos(inFrom),
 		JoltHelpers::ToUEPos(inTo),
 		JoltHelpers::ToUEColor(inColor),
-		false,
+		bDrawingStaticsPersistent,
 		-1.0f);
 }
 
@@ -107,9 +128,9 @@ void UEJoltDebugRenderer::DrawTriangle(JPH::RVec3Arg inV1, JPH::RVec3Arg inV2, J
 	FVector V3 = JoltHelpers::ToUEPos(inV3);
 	FColor	Color = JoltHelpers::ToUEColor(inColor);
 
-	DrawDebugLine(World, V1, V2, Color, false, -1.0f);
-	DrawDebugLine(World, V2, V3, Color, false, -1.0f);
-	DrawDebugLine(World, V3, V1, Color, false, -1.0f);
+	DrawDebugLine(World, V1, V2, Color, bDrawingStaticsPersistent, -1.0f);
+	DrawDebugLine(World, V2, V3, Color, bDrawingStaticsPersistent, -1.0f);
+	DrawDebugLine(World, V3, V1, Color, bDrawingStaticsPersistent, -1.0f);
 }
 
 void UEJoltDebugRenderer::DrawText3D(JPH::RVec3Arg inPosition, const JPH::string_view& inString, JPH::ColorArg inColor, float inHeight)
