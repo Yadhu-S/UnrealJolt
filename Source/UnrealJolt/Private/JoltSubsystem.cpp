@@ -139,6 +139,15 @@ void UJoltSubsystem::SetTimeScale(double deltaSeconds)
 	ConfiguredDeltaSeconds = deltaSeconds;
 }
 
+void UJoltSubsystem::SetPaused(bool bPaused)
+{
+	bStepPaused = bPaused;
+	if (bPaused)
+	{
+		Accumulator = 0.0;
+	}
+}
+
 // Called when world is ready to start gameplay before the game mode transitions to the correct state and call BeginPlay on all actors
 void UJoltSubsystem::OnWorldBeginPlay(UWorld& InWorld)
 {
@@ -247,12 +256,15 @@ void UJoltSubsystem::Tick(float deltaSeconds)
 		return;
 	}
 
-	Accumulator += deltaSeconds;
-
-	while (Accumulator >= ConfiguredDeltaSeconds)
+	if (!bStepPaused)
 	{
-		StepPhysics();
-		Accumulator -= ConfiguredDeltaSeconds;
+		Accumulator += deltaSeconds;
+
+		while (Accumulator >= ConfiguredDeltaSeconds)
+		{
+			StepPhysics();
+			Accumulator -= ConfiguredDeltaSeconds;
+		}
 	}
 
 	const double alpha = Accumulator / ConfiguredDeltaSeconds;

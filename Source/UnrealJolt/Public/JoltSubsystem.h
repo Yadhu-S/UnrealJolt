@@ -209,6 +209,14 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Jolt Physics")
 	void SetTimeScale(double deltaTime);
 
+	/* Will zero the accumulator and stop the physics tick. Will not stop interpolating actors
+	you can still call stepPhysics manually for a reply system or something*/
+	UFUNCTION(BlueprintCallable, Category = "Jolt Physics")
+	void SetPaused(bool bPaused);
+
+	UFUNCTION(BlueprintCallable, Category = "Jolt Physics")
+	bool IsPaused() const { return bStepPaused; }
+
 	UFUNCTION(BlueprintCallable, Category = "Jolt Physics")
 	bool GetContactInfo(FContactInfo& contactInfo) const { return ContactListener->Consume(contactInfo); };
 
@@ -449,6 +457,8 @@ private:
 	double Accumulator = 0.0f;
 
 	double ConfiguredDeltaSeconds = 1.0f / 60.0f;
+
+	bool bStepPaused = false;
 
 	double PhysicsAlpha_ = 0.0;
 
