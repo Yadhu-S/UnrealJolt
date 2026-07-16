@@ -12,6 +12,7 @@
 #include "JoltLayerTable.h"
 #include "JoltFilters.h"
 #include "Delegates/DelegateCombinations.h"
+#include "Engine/Engine.h"
 #include "UObject/ObjectMacros.h"
 
 #ifdef JPH_DEBUG_RENDERER
@@ -481,3 +482,16 @@ public:
 	friend class UJoltSkeletalMeshComponent;
 	friend class JoltAxisConstraint;
 };
+
+inline UJoltSubsystem* GetJoltSubsystem(const UObject* WorldContextObject)
+{
+	if (WorldContextObject)
+	{
+		if (UWorld* World = GEngine->GetWorldFromContextObject(WorldContextObject, EGetWorldErrorMode::ReturnNull))
+		{
+			return World->GetSubsystem<UJoltSubsystem>();
+		}
+	}
+	
+	return nullptr;
+}

@@ -1,4 +1,7 @@
 #include "UnrealJoltEditor.h"
+
+#include "JoltMobilityCustomization.h"
+#include "JoltPhysicsComponent.h"
 #include "JoltSettings.h"
 #include "JoltSettingsDetails.h"
 #include "Modules/ModuleManager.h"
@@ -11,8 +14,12 @@ void FUnrealJoltEditorModule::StartupModule()
 	FPropertyEditorModule& PropertyModule = FModuleManager::LoadModuleChecked<FPropertyEditorModule>("PropertyEditor");
 
 	PropertyModule.RegisterCustomClassLayout(
-		UJoltSettings::StaticClass()->GetFName(),
-		FOnGetDetailCustomizationInstance::CreateStatic(&FJoltSettingsDetails::MakeInstance));
+	   UJoltSettings::StaticClass()->GetFName(),
+	   FOnGetDetailCustomizationInstance::CreateStatic(&FJoltSettingsDetails::MakeInstance));
+
+	PropertyModule.RegisterCustomClassLayout(
+	   UJoltPhysicsComponent::StaticClass()->GetFName(),
+	   FOnGetDetailCustomizationInstance::CreateStatic(&FJoltPhysicsComponentDetails::MakeInstance));
 
 	PropertyModule.NotifyCustomizationModuleChanged();
 }
@@ -23,6 +30,7 @@ void FUnrealJoltEditorModule::ShutdownModule()
 	{
 		FPropertyEditorModule& PropertyModule = FModuleManager::GetModuleChecked<FPropertyEditorModule>("PropertyEditor");
 		PropertyModule.UnregisterCustomClassLayout(UJoltSettings::StaticClass()->GetFName());
+		PropertyModule.UnregisterCustomClassLayout(UJoltPhysicsComponent::StaticClass()->GetFName());
 		PropertyModule.NotifyCustomizationModuleChanged();
 	}
 }
