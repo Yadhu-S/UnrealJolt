@@ -21,6 +21,10 @@
 
 #include "JoltSubsystem.generated.h"
 
+namespace JPH {
+	class MotionProperties;
+}
+
 /* Just used to make them friend classess of UJoltSubSystem class because it needs some private methods
  * that should not be exposed to avoid accidental usage in project code  */
 class UJoltSkeletalMeshComponent;
@@ -240,7 +244,9 @@ public:
 	void JoltSetPhysicsRotation(const JPH::BodyID& bodyID, const FQuat& rotationWS) const;
 
 	void JoltGetPhysicsTransform(const JPH::BodyID& bodyID, FTransform& transform) const;
-
+	
+	void JoltSetMass(const int64& bodyID, const float& mass) const;
+	
 	// This will first perform a broadphase, and then a narrow phase query
 	void RayCastNarrowPhase(const FVector& start, const FVector& end, NarrowPhaseQueryCallback& hitCallback, const JPH::BodyFilter& bodyFilter = {}) const;
 

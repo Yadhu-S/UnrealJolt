@@ -1,6 +1,7 @@
 ﻿#include "JoltPhysicsComponent.h"
 #include "JoltSubsystem.h"
 #include "PhysicsEngine/BodySetup.h"
+#include "UnrealJolt/JoltMain.h"
 
 namespace
 {
@@ -45,7 +46,7 @@ void UJoltPhysicsComponent::BeginPlay()
 		// The execution order of BeginPlay across actors isn't guaranteed, so we don't have the same luxury.
 		// If it causes issues with determinism, we can loop through all jolt physics components in AddAllJoltActors, and sort them there.
 		// For now though, this should be okay... hopefully.
-		Mobility == EJoltMobility::Static ?
+		BodyID = Mobility == EJoltMobility::Static ?
 		   JoltSubsystem->AddStaticBody(GetOwner(), Friction, Restitution, ResolvedLayer) :
 		   JoltSubsystem->AddDynamicBody(GetOwner(), Friction, Restitution, Mass, ResolvedLayer);
 	}
@@ -60,6 +61,45 @@ void UJoltPhysicsComponent::OnRegister()
 	#endif
 }
 
+bool UJoltPhysicsComponent::GetBodyID(int& OutBodyID) const
+{
+	if (BodyID == -1) return false;
+	OutBodyID = BodyID;
+	return true;
+}
+
+void UJoltPhysicsComponent::SetFriction(const float NewFriction)
+{
+	if (!GetOwner()) return;
+
+	if (const UJoltSubsystem* JoltSubsystem = GetJoltSubsystem(GetOwner()))
+	{
+		Friction = NewFriction;
+		JoltSubsystem->GetBodyInterface()->SetFriction(JPH::BodyID(BodyID), Friction);
+	}
+}
+
+void UJoltPhysicsComponent::SetRestitution(float NewRestitution)
+{
+	if (!GetOwner()) return;
+
+	if (const UJoltSubsystem* JoltSubsystem = GetJoltSubsystem(GetOwner()))
+	{
+		Restitution = NewRestitution;
+		JoltSubsystem->GetBodyInterface()->SetRestitution(JPH::BodyID(BodyID), Restitution);
+	}
+}
+
+void UJoltPhysicsComponent::SetMass(float NewMass)
+{
+	if (!GetOwner()) return;
+
+	if (const UJoltSubsystem* JoltSubsystem = GetJoltSubsystem(GetOwner()))
+	{
+		Mass = NewMass;
+		JoltSubsystem->JoltSetMass(BodyID, NewMass);
+	}
+}
 
 TArray<FString> UJoltPhysicsComponent::GetObjectLayerNames() const
 {

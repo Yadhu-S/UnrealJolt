@@ -11,8 +11,7 @@ enum class EJoltMobility : uint8
 	Dynamic,
 };
 
-/** An alternative to the tagging system. Allows you to specify mass, friction, restitution, and layer.
-    TO-DO: Helper functions (set mass, set restitution, set friction, etc.) */
+/** An alternative to the tagging system. Allows you to specify mass, friction, restitution, and layer. */
 UCLASS(ClassGroup=(Custom), meta=(BlueprintSpawnableComponent))
 class UNREALJOLT_API UJoltPhysicsComponent : public UActorComponent
 {
@@ -49,7 +48,22 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Jolt Physics")
 	float Restitution = 0.5f;
 	
+	UFUNCTION(BlueprintPure, Category = "Jolt Physics|Helpers")
+	bool GetBodyID(int& OutBodyID) const;
+	
+	UFUNCTION(BlueprintCallable, Category = "Jolt Physics|Properties")
+	void SetFriction(float NewFriction);
+	
+	UFUNCTION(BlueprintCallable, Category = "Jolt Physics|Properties")
+	void SetRestitution(float NewRestitution);
+	
+	UFUNCTION(BlueprintCallable, Category = "Jolt Physics|Properties")
+	void SetMass(float NewMass);
+	
 private:
+	UPROPERTY()
+	int64 BodyID = -1;
+	
 	UFUNCTION()
     TArray<FString> GetObjectLayerNames() const;
 	

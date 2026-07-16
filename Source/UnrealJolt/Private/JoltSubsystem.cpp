@@ -1480,6 +1480,11 @@ void UJoltSubsystem::JoltGetPhysicsTransform(const JPH::BodyID& bodyID, FTransfo
 	transform = JoltHelpers::ToUETransform(GetBodyInterface()->GetWorldTransform(bodyID));
 }
 
+void UJoltSubsystem::JoltSetMass(const int64& bodyID, const float& mass) const
+{
+	GetBody(bodyID)->GetMotionProperties()->ScaleToMass(mass);
+}
+
 void UJoltSubsystem::JoltAddCentralImpulse(const JPH::BodyID& bodyID, const FVector& impulse) const
 {
 	GetBodyInterface()->AddImpulse(bodyID, JoltHelpers::ToJoltVec3(impulse));
