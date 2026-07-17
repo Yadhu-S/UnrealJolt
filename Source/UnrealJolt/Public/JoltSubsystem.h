@@ -483,7 +483,7 @@ private:
 	void BroadcastPostPhysicsListeners(float DeltaTime);
 	
 	UPROPERTY() 
-	TArray<TScriptInterface<IJoltPhysicsCallbackInterface>> PhysicsListeners;
+	TArray<TWeakObjectPtr<UObject>> PhysicsListeners;
 
 	bool bIsReady = false;
 

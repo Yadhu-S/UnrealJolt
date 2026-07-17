@@ -136,10 +136,15 @@ void UJoltSubsystem::AddPostInterpolationCallback(const TDelegate<void(float)>& 
 
 void UJoltSubsystem::RegisterPhysicsListener(AActor* Listener)
 {
+	if (!Listener)
+	{
+		UE_LOG(JoltSubSystemLogs, Warning, TEXT("RegisterPhysicsListener: Listener is invalid"))
+		return;
+	}
+
 	if (Listener->Implements<UJoltPhysicsCallbackInterface>())
 	{
-		const TScriptInterface<IJoltPhysicsCallbackInterface> Interface = Listener;
-		PhysicsListeners.AddUnique(Interface);
+		PhysicsListeners.AddUnique(TWeakObjectPtr<UObject>(Listener));
 	}
 	else
 	{
@@ -149,36 +154,48 @@ void UJoltSubsystem::RegisterPhysicsListener(AActor* Listener)
 
 void UJoltSubsystem::UnregisterPhysicsListener(AActor* Listener)
 {
-	if (Listener->Implements<UJoltPhysicsCallbackInterface>())
-	{
-		const TScriptInterface<IJoltPhysicsCallbackInterface> Interface = Listener;
-		PhysicsListeners.Remove(Interface);
-	}
-	else
-	{
-		UE_LOG(JoltSubSystemLogs, Warning, TEXT("UnregisterPhysicsListener: %s does not implement IJoltPhysicsCallbackInterface"), *Listener->GetName());
-	}
+    if (!Listener)
+    {
+        UE_LOG(JoltSubSystemLogs, Warning, TEXT("UnregisterPhysicsListener: Listener is invalid"))
+        return;
+    }
+	
+    PhysicsListeners.RemoveAll([Listener](const TWeakObjectPtr<>& Entry)
+    {
+        return Entry.Get() == Listener;
+    });
 }
 
 void UJoltSubsystem::BroadcastPrePhysicsListeners(float DeltaTime)
 {
-	for (const TScriptInterface<IJoltPhysicsCallbackInterface>& Listener : PhysicsListeners)
+	for (auto It = PhysicsListeners.CreateIterator(); It; ++It)
 	{
-		if (UObject* Obj = Listener.GetObject())
+		UObject* Obj = It->Get();
+
+		// Prune invalid physics listeners
+		if (!IsValid(Obj))
 		{
-			IJoltPhysicsCallbackInterface::Execute_OnPrePhysicsStep(Obj, DeltaTime);
+			It.RemoveCurrent();
+			continue;
 		}
+
+		IJoltPhysicsCallbackInterface::Execute_OnPrePhysicsStep(Obj, DeltaTime);
 	}
 }
 
 void UJoltSubsystem::BroadcastPostPhysicsListeners(float DeltaTime)
 {
-	for (const TScriptInterface<IJoltPhysicsCallbackInterface>& Listener : PhysicsListeners)
+	for (auto It = PhysicsListeners.CreateIterator(); It; ++It)
 	{
-		if (UObject* Obj = Listener.GetObject())
+		UObject* Obj = It->Get();
+
+		if (!IsValid(Obj))
 		{
-			IJoltPhysicsCallbackInterface::Execute_OnPostPhysicsStep(Obj, DeltaTime);
+			It.RemoveCurrent();
+			continue;
 		}
+
+		IJoltPhysicsCallbackInterface::Execute_OnPostPhysicsStep(Obj, DeltaTime);
 	}
 }
 
