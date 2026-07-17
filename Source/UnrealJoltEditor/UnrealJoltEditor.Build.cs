@@ -29,7 +29,9 @@ public class UnrealJoltEditor : ModuleRules
 				"PropertyEditor",
 				"DetailCustomizations",
 				"EditorSubsystem",
-				"ToolMenus",
+				"ToolMenus", 
+				"BlueprintGraph",
+				"Kismet"
 			}
 		);
 	}

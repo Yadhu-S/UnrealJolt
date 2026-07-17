@@ -1475,14 +1475,215 @@ void UJoltSubsystem::JoltGetPhysicsTransform(const int64& bodyID, FTransform& tr
 	transform = JoltHelpers::ToUETransform(GetBodyInterface()->GetWorldTransform(JPH::BodyID(bodyID)));
 }
 
+void UJoltSubsystem::JoltSetAllowedDOFs(const int64& bodyID, int32 allowedDOFs) const
+{
+	JoltSetAllowedDOFs(JPH::BodyID(bodyID), allowedDOFs);
+}
+
+void UJoltSubsystem::JoltSetObjectLayer(const int64& bodyID, FName layer) const
+{
+	JoltSetObjectLayer(JPH::BodyID(bodyID), layer);
+}
+
+void UJoltSubsystem::JoltSetMass(const int64& bodyID, const float& mass) const
+{
+	JoltSetMass(JPH::BodyID(bodyID), mass);
+}
+
+void UJoltSubsystem::JoltSetGravityFactor(const int64& bodyID, const float& gravityFactor) const
+{
+	JoltSetGravityFactor(JPH::BodyID(bodyID), gravityFactor);
+}
+
+void UJoltSubsystem::JoltSetApplyGyroscopicForce(const int64& bodyID, bool bApplyGyroscopicForce) const
+{
+	JoltSetApplyGyroscopicForce(JPH::BodyID(bodyID), bApplyGyroscopicForce);
+}
+
+void UJoltSubsystem::JoltSetMaxLinearVelocity(const int64& bodyID, float maxLinearVelocity) const
+{
+	JoltSetMaxLinearVelocity(JPH::BodyID(bodyID), maxLinearVelocity);
+}
+
+void UJoltSubsystem::JoltSetMaxAngularVelocity(const int64& bodyID, float maxAngularVelocity) const
+{
+	JoltSetMaxAngularVelocity(JPH::BodyID(bodyID), maxAngularVelocity);
+}
+
+void UJoltSubsystem::JoltSetFriction(const int64& bodyID, float friction) const
+{
+	JoltSetFriction(JPH::BodyID(bodyID), friction);
+}
+
+void UJoltSubsystem::JoltSetRestitution(const int64& bodyID, float restitution) const
+{
+	JoltSetRestitution(JPH::BodyID(bodyID), restitution);
+}
+
+void UJoltSubsystem::JoltSetLinearDamping(const int64& bodyID, float linearDamping) const
+{
+	JoltSetLinearDamping(JPH::BodyID(bodyID), linearDamping);
+}
+
+void UJoltSubsystem::JoltSetAngularDamping(const int64& bodyID, float angularDamping) const
+{
+	JoltSetAngularDamping(JPH::BodyID(bodyID), angularDamping);
+}
+
+void UJoltSubsystem::JoltSetAllowSleeping(const int64& bodyID, bool bAllowSleeping) const
+{
+	JoltSetAllowSleeping(JPH::BodyID(bodyID), bAllowSleeping);
+}
+
+void UJoltSubsystem::JoltSetNumVelocityStepsOverride(const int64& bodyID, int numVelocityStepsOverride) const
+{
+	JoltSetNumVelocityStepsOverride(JPH::BodyID(bodyID), numVelocityStepsOverride);
+}
+
+void UJoltSubsystem::JoltSetNumPositionStepsOverride(const int64& bodyID, int numPositionStepsOverride) const
+{
+	JoltSetNumPositionStepsOverride(JPH::BodyID(bodyID), numPositionStepsOverride);
+}
+
+void UJoltSubsystem::JoltSetEnhancedInternalEdgeRemoval(const int64& bodyID, bool bEnhancedInternalEdgeRemoval) const
+{
+	JoltSetEnhancedInternalEdgeRemoval(JPH::BodyID(bodyID), bEnhancedInternalEdgeRemoval);
+}
+
 void UJoltSubsystem::JoltGetPhysicsTransform(const JPH::BodyID& bodyID, FTransform& transform) const
 {
 	transform = JoltHelpers::ToUETransform(GetBodyInterface()->GetWorldTransform(bodyID));
 }
 
-void UJoltSubsystem::JoltSetMass(const int64& bodyID, const float& mass) const
+void UJoltSubsystem::JoltSetAllowedDOFs(const JPH::BodyID& bodyID, int32 allowedDOFs) const
 {
-	GetBody(bodyID)->GetMotionProperties()->ScaleToMass(mass);
+	if (JPH::Body* body = GetBody(bodyID.GetIndexAndSequenceNumber()))
+	{
+		if (JPH::MotionProperties* MotionProperties = body->GetMotionProperties())
+		{
+			JPH::EAllowedDOFs JoltDOFs = JPH::EAllowedDOFs::None;
+
+			// X Axis maps 1:1
+			if (allowedDOFs & (int32)EJoltAllowedDOFs::TranslationX) JoltDOFs |= JPH::EAllowedDOFs::TranslationX;
+			if (allowedDOFs & (int32)EJoltAllowedDOFs::RotationX) JoltDOFs |= JPH::EAllowedDOFs::RotationX;
+
+			// Unreal's Y maps to Jolt's Z
+			if (allowedDOFs & (int32)EJoltAllowedDOFs::TranslationY) JoltDOFs |= JPH::EAllowedDOFs::TranslationZ;
+			if (allowedDOFs & (int32)EJoltAllowedDOFs::RotationY) JoltDOFs |= JPH::EAllowedDOFs::RotationZ;
+
+			// Unreal's Z maps to Jolt's Y
+			if (allowedDOFs & (int32)EJoltAllowedDOFs::TranslationZ) JoltDOFs |= JPH::EAllowedDOFs::TranslationY;
+			if (allowedDOFs & (int32)EJoltAllowedDOFs::RotationZ) JoltDOFs |= JPH::EAllowedDOFs::RotationY;
+			
+			JPH::MassProperties MassProperties = body->GetShape()->GetMassProperties();
+			MassProperties.ScaleToMass(1.0f / MotionProperties->GetInverseMass());
+			MotionProperties->SetMassProperties(JoltDOFs, MassProperties);
+		}
+	}
+}
+
+void UJoltSubsystem::JoltSetObjectLayer(const JPH::BodyID& bodyID, FName layer) const
+{
+	JPH::ObjectLayer objectLayer = ResolveObjectLayer(layer);
+	if (objectLayer == JPH::cObjectLayerInvalid) return;
+	
+	GetBodyInterface()->SetObjectLayer(bodyID, objectLayer);
+}
+
+void UJoltSubsystem::JoltSetMass(const JPH::BodyID& bodyID, const float& mass) const
+{
+	if (JPH::Body* body = GetBody(bodyID.GetIndexAndSequenceNumber()))
+	{
+		if (body->GetMotionProperties())
+		body->GetMotionProperties()->ScaleToMass(mass);
+	}
+}
+
+void UJoltSubsystem::JoltSetGravityFactor(const JPH::BodyID& bodyID, const float& gravityFactor) const
+{
+	GetBodyInterface()->SetGravityFactor(bodyID, gravityFactor);
+}
+
+void UJoltSubsystem::JoltSetApplyGyroscopicForce(const JPH::BodyID& bodyID, bool bApplyGyroscopicForce) const
+{
+	if (JPH::Body* body = GetBody(bodyID.GetIndexAndSequenceNumber()))
+	{
+		body->SetApplyGyroscopicForce(bApplyGyroscopicForce);
+	}
+}
+
+void UJoltSubsystem::JoltSetMaxLinearVelocity(const JPH::BodyID& bodyID, float maxLinearVelocity) const
+{
+	GetBodyInterface()->SetMaxLinearVelocity(bodyID, maxLinearVelocity);
+}
+
+void UJoltSubsystem::JoltSetMaxAngularVelocity(const JPH::BodyID& bodyID, float maxAngularVelocity) const
+{
+	GetBodyInterface()->SetMaxAngularVelocity(bodyID, maxAngularVelocity);
+}
+
+void UJoltSubsystem::JoltSetFriction(const JPH::BodyID& bodyID, float friction) const
+{
+	GetBodyInterface()->SetFriction(bodyID, friction);
+}
+
+void UJoltSubsystem::JoltSetRestitution(const JPH::BodyID& bodyID, float restitution) const
+{
+	GetBodyInterface()->SetRestitution(bodyID, restitution);
+}
+
+void UJoltSubsystem::JoltSetLinearDamping(const JPH::BodyID& bodyID, float linearDamping) const
+{
+	if (JPH::Body* body = GetBody(bodyID.GetIndexAndSequenceNumber()))
+	{
+		if (body->GetMotionProperties())
+		body->GetMotionProperties()->SetLinearDamping(linearDamping);
+	}
+}
+
+void UJoltSubsystem::JoltSetAngularDamping(const JPH::BodyID& bodyID, float angularDamping) const
+{
+	if (JPH::Body* body = GetBody(bodyID.GetIndexAndSequenceNumber()))
+	{
+		if (body->GetMotionProperties())
+		body->GetMotionProperties()->SetAngularDamping(angularDamping);
+	}
+}
+
+void UJoltSubsystem::JoltSetAllowSleeping(const JPH::BodyID& bodyID, bool bAllowSleeping) const
+{
+	if (JPH::Body* body = GetBody(bodyID.GetIndexAndSequenceNumber()))
+		body->SetAllowSleeping(bAllowSleeping);
+}
+
+void UJoltSubsystem::JoltSetNumVelocityStepsOverride(const JPH::BodyID& bodyID, int numVelocityStepsOverride) const
+{
+	if (JPH::Body* body = GetBody(bodyID.GetIndexAndSequenceNumber()))
+	{
+		if (JPH::MotionProperties* MotionProperties = body->GetMotionProperties())
+		{
+			MotionProperties->SetNumVelocityStepsOverride(numVelocityStepsOverride);
+		}
+	}
+}
+
+void UJoltSubsystem::JoltSetNumPositionStepsOverride(const JPH::BodyID& bodyID, int numPositionStepsOverride) const
+{
+	if (JPH::Body* body = GetBody(bodyID.GetIndexAndSequenceNumber()))
+	{
+		if (JPH::MotionProperties* MotionProperties = body->GetMotionProperties())
+		{
+			MotionProperties->SetNumPositionStepsOverride(numPositionStepsOverride);
+		}
+	}
+}
+
+void UJoltSubsystem::JoltSetEnhancedInternalEdgeRemoval(const JPH::BodyID& bodyID, bool bEnhancedInternalEdgeRemoval) const
+{
+	if (JPH::Body* body = GetBody(bodyID.GetIndexAndSequenceNumber()))
+	{
+		body->SetEnhancedInternalEdgeRemoval(bEnhancedInternalEdgeRemoval);
+	}
 }
 
 void UJoltSubsystem::JoltAddCentralImpulse(const JPH::BodyID& bodyID, const FVector& impulse) const
