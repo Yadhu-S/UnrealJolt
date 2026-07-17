@@ -216,6 +216,12 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category = "Jolt Physics")
 	bool IsPaused() const { return bStepPaused; }
+	
+	UFUNCTION(BlueprintCallable, Category = "Jolt Physics")
+	void SetGravity(const FVector& gravity);
+
+	UFUNCTION(BlueprintCallable, Category = "Jolt Physics")
+	FVector GetGravity() const;
 
 	UFUNCTION(BlueprintCallable, Category = "Jolt Physics")
 	bool GetContactInfo(FContactInfo& contactInfo) const { return ContactListener->Consume(contactInfo); };
