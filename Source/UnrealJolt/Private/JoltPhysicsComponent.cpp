@@ -1,6 +1,5 @@
 ﻿#include "JoltPhysicsComponent.h"
 #include "JoltSubsystem.h"
-#include "DataWrappers/ChaosVDJointDataWrappers.h"
 #include "PhysicsEngine/BodySetup.h"
 #include "UnrealJolt/JoltMain.h"
 
