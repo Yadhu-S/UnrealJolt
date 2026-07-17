@@ -23,7 +23,7 @@ static EPhysicalSurface ResolveContactSurface(const JPH::Body& Body, const JPH::
 
 JPH::ValidateResult UEJoltCallBackContactListener::OnContactValidate(const JPH::Body& inBody1, const JPH::Body& inBody2, JPH::RVec3Arg inBaseOffset, const JPH::CollideShapeResult& inCollisionResult)
 {
-	// TODO: 
+	// TODO:
 	return ContactListener::OnContactValidate(inBody1, inBody2, inBaseOffset, inCollisionResult);
 }
 
@@ -36,7 +36,7 @@ void UEJoltCallBackContactListener::OnContactAdded(const JPH::Body& inBody1, con
 	const TEnumAsByte<EPhysicalSurface> surface1(ResolveContactSurface(inBody1, inManifold.mSubShapeID1));
 	const TEnumAsByte<EPhysicalSurface> surface2(ResolveContactSurface(inBody2, inManifold.mSubShapeID2));
 
-	for (uint8 i = 0; const JPH::CollisionEstimationResult::Impulse& impulse : result.mImpulses)
+	for (uint8 i = 0; const float& contactImpulse : result.mContactImpulse)
 	{
 		const JPH::RVec3 contactPoint1 = inManifold.GetWorldSpaceContactPointOn1(i);
 		const JPH::RVec3 contactPoint2 = inManifold.GetWorldSpaceContactPointOn2(i);
@@ -47,7 +47,7 @@ void UEJoltCallBackContactListener::OnContactAdded(const JPH::Body& inBody1, con
 				inBody2.GetID().GetIndexAndSequenceNumber(),
 				JoltHelpers::ToUEPos(contactPoint1),
 				JoltHelpers::ToUEPos(contactPoint2),
-				JoltHelpers::ToUESize(impulse.mContactImpulse),
+				JoltHelpers::ToUESize(contactImpulse),
 				JoltHelpers::ToUESize(inManifold.mWorldSpaceNormal, false),
 				surface1,
 				surface2,
@@ -100,5 +100,5 @@ void UEJoltCallBackContactListener::OnContactPersisted(const JPH::Body& inBody1,
 }
 
 void UEJoltCallBackContactListener::OnContactRemoved(const JPH::SubShapeIDPair& inSubShapePair) {
-	// TODO: 
+	// TODO:
 };
