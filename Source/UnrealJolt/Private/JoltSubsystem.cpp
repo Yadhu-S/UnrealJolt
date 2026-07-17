@@ -139,6 +139,15 @@ void UJoltSubsystem::SetTimeScale(double deltaSeconds)
 	ConfiguredDeltaSeconds = deltaSeconds;
 }
 
+void UJoltSubsystem::SetPaused(bool bPaused)
+{
+	bStepPaused = bPaused;
+	if (bPaused)
+	{
+		Accumulator = 0.0;
+	}
+}
+
 // Called when world is ready to start gameplay before the game mode transitions to the correct state and call BeginPlay on all actors
 void UJoltSubsystem::OnWorldBeginPlay(UWorld& InWorld)
 {
@@ -239,7 +248,7 @@ void UJoltSubsystem::AddAllJoltActors(const UWorld* World)
 
 void UJoltSubsystem::Tick(float deltaSeconds)
 {
-	TRACE_CPUPROFILER_EVENT_SCOPE_STR("JoltSubsystem_Tick");
+	TRACE_CPUPROFILER_EVENT_SCOPE(UJoltSubsystem::Tick);
 	Super::Tick(deltaSeconds);
 
 	if (JoltWorker == nullptr)
@@ -247,12 +256,15 @@ void UJoltSubsystem::Tick(float deltaSeconds)
 		return;
 	}
 
-	Accumulator += deltaSeconds;
-
-	while (Accumulator >= ConfiguredDeltaSeconds)
+	if (!bStepPaused)
 	{
-		StepPhysics();
-		Accumulator -= ConfiguredDeltaSeconds;
+		Accumulator += deltaSeconds;
+
+		while (Accumulator >= ConfiguredDeltaSeconds)
+		{
+			StepPhysics();
+			Accumulator -= ConfiguredDeltaSeconds;
+		}
 	}
 
 	const double alpha = Accumulator / ConfiguredDeltaSeconds;
@@ -1431,7 +1443,6 @@ void UJoltSubsystem::DrawDebugLines() const
 {
 	if (!JoltSettings->bEnableDebugRenderer)
 	{
-		JoltDebugRendererImpl->OnDebugRenderDisabled();
 		return;
 	}
 	if (MainPhysicsSystem == nullptr || DrawSettings == nullptr || JoltDebugRendererImpl == nullptr)
