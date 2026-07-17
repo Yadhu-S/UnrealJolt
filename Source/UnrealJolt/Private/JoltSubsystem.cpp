@@ -148,6 +148,25 @@ void UJoltSubsystem::SetPaused(bool bPaused)
 	}
 }
 
+void UJoltSubsystem::SetGravity(const FVector& gravity)
+{
+	if (!MainPhysicsSystem) return;
+	MainPhysicsSystem->SetGravity(JoltHelpers::ToJoltVec3(gravity));
+	
+	// We need to wake up all dynamic bodies once gravity is set
+	for (const FJoltBodyActor& JoltBodyActor : JoltBodyActors)
+	{
+		if (GetBodyInterface()->GetMotionType(*JoltBodyActor.JoltBodyID) == JPH::EMotionType::Dynamic)
+			GetBodyInterface()->ActivateBody(*JoltBodyActor.JoltBodyID);
+	}
+}
+
+FVector UJoltSubsystem::GetGravity() const
+{
+	if (!MainPhysicsSystem) return FVector();
+	return JoltHelpers::ToUESize(MainPhysicsSystem->GetGravity());
+}
+
 // Called when world is ready to start gameplay before the game mode transitions to the correct state and call BeginPlay on all actors
 void UJoltSubsystem::OnWorldBeginPlay(UWorld& InWorld)
 {
@@ -385,8 +404,8 @@ void UJoltSubsystem::InitPhysicsSystem(
 #ifdef JPH_DEBUG_RENDERER
 	JoltDebugRendererImpl = new UEJoltDebugRenderer(GetWorld());
 #endif
-	// Jolt uses Y axis as the up direction, and unreal uses the Z axis. So, set gravity for Y
-	MainPhysicsSystem->SetGravity(JPH::Vec3Arg(0.0f, -9.8f, 0.0f));
+	// Set gravity according to the default gravity vector in settings
+	MainPhysicsSystem->SetGravity(JoltHelpers::ToJoltVec3(JoltSettings->DefaultGravity));
 	MainPhysicsSystem->Init(
 		cMaxBodies,
 		cNumBodyMutexes,
