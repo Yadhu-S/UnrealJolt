@@ -134,6 +134,54 @@ void UJoltSubsystem::AddPostInterpolationCallback(const TDelegate<void(float)>& 
 	PostInterpolationCallbacks.Add(callback);
 }
 
+void UJoltSubsystem::RegisterPhysicsListener(AActor* Listener)
+{
+	if (Listener->Implements<UJoltPhysicsCallbackInterface>())
+	{
+		const TScriptInterface<IJoltPhysicsCallbackInterface> Interface = Listener;
+		PhysicsListeners.AddUnique(Interface);
+	}
+	else
+	{
+		UE_LOG(JoltSubSystemLogs, Warning, TEXT("RegisterPhysicsListener: %s does not implement IJoltPhysicsCallbackInterface"), *Listener->GetName());
+	}
+}
+
+void UJoltSubsystem::UnregisterPhysicsListener(AActor* Listener)
+{
+	if (Listener->Implements<UJoltPhysicsCallbackInterface>())
+	{
+		const TScriptInterface<IJoltPhysicsCallbackInterface> Interface = Listener;
+		PhysicsListeners.Remove(Interface);
+	}
+	else
+	{
+		UE_LOG(JoltSubSystemLogs, Warning, TEXT("UnregisterPhysicsListener: %s does not implement IJoltPhysicsCallbackInterface"), *Listener->GetName());
+	}
+}
+
+void UJoltSubsystem::BroadcastPrePhysicsListeners(float DeltaTime)
+{
+	for (const TScriptInterface<IJoltPhysicsCallbackInterface>& Listener : PhysicsListeners)
+	{
+		if (UObject* Obj = Listener.GetObject())
+		{
+			IJoltPhysicsCallbackInterface::Execute_OnPrePhysicsStep(Obj, DeltaTime);
+		}
+	}
+}
+
+void UJoltSubsystem::BroadcastPostPhysicsListeners(float DeltaTime)
+{
+	for (const TScriptInterface<IJoltPhysicsCallbackInterface>& Listener : PhysicsListeners)
+	{
+		if (UObject* Obj = Listener.GetObject())
+		{
+			IJoltPhysicsCallbackInterface::Execute_OnPostPhysicsStep(Obj, DeltaTime);
+		}
+	}
+}
+
 void UJoltSubsystem::SetTimeScale(double deltaSeconds)
 {
 	ConfiguredDeltaSeconds = deltaSeconds;
@@ -188,6 +236,9 @@ void UJoltSubsystem::OnWorldBeginPlay(UWorld& InWorld)
 		JoltSettings->bEnableMultithreading);
 
 	JoltWorker = new FJoltWorker(WorkerOptions);
+
+	JoltWorker->AddPrePhysicsCallback(TDelegate<void(float)>::CreateUObject(this, &UJoltSubsystem::BroadcastPrePhysicsListeners));
+	JoltWorker->AddPostPhysicsCallback(TDelegate<void(float)>::CreateUObject(this, &UJoltSubsystem::BroadcastPostPhysicsListeners));
 
 	bIsReady = true;
 	OnReady.Broadcast();
