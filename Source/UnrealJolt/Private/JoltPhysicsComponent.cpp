@@ -3,7 +3,7 @@
 #include "PhysicsEngine/BodySetup.h"
 #include "UnrealJolt/JoltMain.h"
 
-/** Gets the Jolt physics component and subsystem for an actor, returning early if either is invalid. */
+/** Gets the Jolt physics component and subsystem for an actor, validates BodyID, returns early if any are invalid. */
 #define JOLT_GET_COMPONENT_AND_SUBSYSTEM() \
 if (!Actor) return; \
 UJoltPhysicsComponent* Component = Actor->GetComponentByClass<UJoltPhysicsComponent>(); \
@@ -73,9 +73,11 @@ void UJoltPhysicsComponent::BeginPlay()
 			JoltSubsystem->JoltSetLinearDamping(Body, LinearDamping);
 			JoltSubsystem->JoltSetAngularDamping(Body, AngularDamping);
 			JoltSubsystem->JoltSetAllowSleeping(Body, bAllowSleeping);
+			JoltSubsystem->JoltSetEnhancedInternalEdgeRemoval(Body, bEnhancedInternalEdgeRemoval);
+
+			// 0 means unset, so skip the override and let Jolt use its default
 			if (NumVelocityStepsOverride != 0) JoltSubsystem->JoltSetNumVelocityStepsOverride(Body, NumVelocityStepsOverride);
 			if (NumPositionStepsOverride != 0) JoltSubsystem->JoltSetNumPositionStepsOverride(Body, NumPositionStepsOverride);
-			JoltSubsystem->JoltSetEnhancedInternalEdgeRemoval(Body, bEnhancedInternalEdgeRemoval);
 		}
 	}
 }
@@ -280,6 +282,7 @@ void UJoltPhysicsComponent::PostEditChangeProperty(FPropertyChangedEvent& Proper
 
 	if (ChangedProp == GET_MEMBER_NAME_CHECKED(UJoltPhysicsComponent, MotionType))
 	{
+		// Static/Dynamic have different default layers, so fall back to the sentinel
 		Layer = DefaultLayerSentinel;
 
 		if (MotionType == EJoltMotionType::Static)

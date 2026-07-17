@@ -4,7 +4,7 @@
 #include "Kismet2/BlueprintEditorUtils.h"
 #include "Kismet2/CompilerResultsLog.h"
 
-static bool DoesActorClassHaveComponent(UClass* ActorClass, UClass* RequiredComponentClass)
+bool UJoltPhysicsBlueprintCompilerExtension::DoesActorClassHaveComponent(UClass* ActorClass, UClass* RequiredComponentClass)
 {
 	if (!ActorClass || !RequiredComponentClass)
 		return false;
@@ -45,11 +45,12 @@ void UJoltPhysicsBlueprintCompilerExtension::ProcessBlueprintCompiled(const FKis
 		if (!Function || !Function->HasMetaData(TEXT("RequireActorComponent")))
 			continue;
 
+		// Metadata is formatted as "ParamName,ComponentClassName"
 		FString ParamName;
 		FString ComponentClassName;
 		if (!Function->GetMetaData(TEXT("RequireActorComponent")).Split(TEXT(","), &ParamName, &ComponentClassName))
 			continue;
-
+		
 		ComponentClassName.RemoveFromStart(TEXT("U"));
 
 		UEdGraphPin* ActorPin = CallNode->FindPin(*ParamName);
@@ -60,6 +61,7 @@ void UJoltPhysicsBlueprintCompilerExtension::ProcessBlueprintCompiled(const FKis
 
 		if (ActorPin->LinkedTo.Num() == 0)
 		{
+			// If we default to self - unconnected pin refers to Self
 			if (bDefaultsToSelf)
 			{
 				UClass* SelfClass = CompilationContext.Blueprint->SkeletonGeneratedClass.Get();
@@ -83,6 +85,7 @@ void UJoltPhysicsBlueprintCompilerExtension::ProcessBlueprintCompiled(const FKis
 
 		bool bHasComponent;
 
+		// A level actor reference lets us check its components directly
 		if (ReferencedLevelActor)
 		{
 			bHasComponent = ReferencedLevelActor->FindComponentByClass(RequiredComponentClass) != nullptr;
@@ -91,6 +94,7 @@ void UJoltPhysicsBlueprintCompilerExtension::ProcessBlueprintCompiled(const FKis
 		{
 			UClass* ConnectedClass;
 
+			// If self, we resolve against the blueprint's class
 			if (SourcePin->PinType.PinSubCategory == UEdGraphSchema_K2::PSC_Self)
 			{
 				ConnectedClass = CompilationContext.Blueprint->SkeletonGeneratedClass.Get();
@@ -102,7 +106,8 @@ void UJoltPhysicsBlueprintCompilerExtension::ProcessBlueprintCompiled(const FKis
 
 			bHasComponent = ConnectedClass && DoesActorClassHaveComponent(ConnectedClass, RequiredComponentClass);
 		}
-
+		
+		// Fail compilation when an actor does not have required component
 		if (RequiredComponentClass && !bHasComponent)
 		{
 			CompilationContext.MessageLog.Error(*FString::Printf(TEXT("@@ requires %s to have a %s"), *ParamName, *ComponentClassName), CallNode);

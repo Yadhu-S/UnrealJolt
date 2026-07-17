@@ -14,6 +14,7 @@ class IPropertyHandle;
 
 enum class EJoltMotionType : uint8;
 
+/** A switcher for motion type in the style of Unreal's physics mobility enum. */
 class FJoltMotionTypeCustomization : public IPropertyTypeCustomization
 {
 public:

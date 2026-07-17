@@ -20,6 +20,8 @@ TSharedRef<IPropertyTypeCustomization> FJoltMotionTypeCustomization::MakeInstanc
 
 void FJoltMotionTypeCustomization::CustomizeHeader(TSharedRef<IPropertyHandle> PropertyHandle, FDetailWidgetRow& HeaderRow, IPropertyTypeCustomizationUtils& CustomizationUtils)
 {
+	// Most of this more or less mirrors how Unreal customizes their mobility enum
+	
 	MotionTypeHandle = PropertyHandle;
 
 	TSharedRef<SSegmentedControl<EJoltMotionType>> ButtonOptionsPanel =

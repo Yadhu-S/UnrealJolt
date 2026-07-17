@@ -1,529 +1,0 @@
-[1mdiff --git a/Source/UnrealJolt/Private/JoltPhysicsComponent.cpp b/Source/UnrealJolt/Private/JoltPhysicsComponent.cpp[m
-[1mindex 83599dd..484d36d 100644[m
-[1m--- a/Source/UnrealJolt/Private/JoltPhysicsComponent.cpp[m
-[1m+++ b/Source/UnrealJolt/Private/JoltPhysicsComponent.cpp[m
-[36m@@ -1,35 +1,152 @@[m
-[31m-﻿// Fill out your copyright notice in the Description page of Project Settings.[m
-[32m+[m[32m﻿#include "JoltPhysicsComponent.h"[m[41m[m
-[32m+[m[32m#include "JoltSubsystem.h"[m[41m[m
-[32m+[m[32m#include "PhysicsEngine/BodySetup.h"[m[41m[m
- [m
-[32m+[m[32mnamespace[m[41m[m
-[32m+[m[32m{[m[41m[m
-[32m+[m	[32m// Resolves to the default static/dynamic layer at runtime. Just less messy than having both Static and Dynamic as options for Layer.[m[41m[m
-[32m+[m	[32mconst FName DefaultLayerSentinel(TEXT("Default"));[m[41m[m
-[32m+[m[32m}[m[41m[m
- [m
-[31m-#include "JoltPhysicsComponent.h"[m
-[32m+[m[32mUJoltPhysicsComponent::UJoltPhysicsComponent()[m[41m[m
-[32m+[m[32m{[m[41m[m
-[32m+[m	[32mPrimaryComponentTick.bCanEverTick = false;[m[41m[m
-[32m+[m[32m}[m[41m[m
- [m
-[32m+[m[32mvoid UJoltPhysicsComponent::BeginPlay()[m[41m[m
-[32m+[m[32m{[m[41m[m
-[32m+[m	[32mSuper::BeginPlay();[m[41m[m
-[32m+[m[41m    [m
-[32m+[m	[32mif (!GetOwner()) return;[m[41m[m
- [m
-[31m-// Sets default values for this component's properties[m
-[31m-UJoltPhysicsComponent::UJoltPhysicsComponent()[m
-[32m+[m	[32mTArray<USceneComponent*> SceneComponents;[m[41m[m
-[32m+[m	[32mGetOwner()->GetComponents<USceneComponent>(SceneComponents);[m[41m[m
-[32m+[m[41m[m
-[32m+[m	[32mfor (USceneComponent* SceneComponent : SceneComponents)[m[41m[m
-[32m+[m	[32m{[m[41m[m
-[32m+[m		[32mif (!SceneComponent) continue;[m[41m[m
-[32m+[m[41m		[m
-[32m+[m		[32m// Dynamic bodies have to be movable, static bodies can be either.[m[41m[m
-[32m+[m		[32mif (Mobility == EJoltMobility::Dynamic)[m[41m[m
-[32m+[m			[32mSceneComponent->SetMobility(EComponentMobility::Movable);[m[41m[m
-[32m+[m[41m[m
-[32m+[m		[32m// This is also set in ExtractPhysicsGeometry, but I felt it was good practice to set it here too.[m[41m [m
-[32m+[m		[32mif (UPrimitiveComponent* PrimitiveComponent = Cast<UPrimitiveComponent>(SceneComponent))[m[41m[m
-[32m+[m			[32mPrimitiveComponent->SetSimulatePhysics(false);[m[41m[m
-[32m+[m	[32m}[m[41m[m
-[32m+[m[41m    [m
-[32m+[m	[32mif (UJoltSubsystem* JoltSubsystem = GetJoltSubsystem(GetOwner()))[m[41m[m
-[32m+[m	[32m{[m[41m[m
-[32m+[m		[32mconst FName ResolvedLayer = ResolveLayer();[m[41m[m
-[32m+[m		[32mRecalculateMass();[m[41m[m
-[32m+[m[41m		[m
-[32m+[m		[32m// The benefit of the tagging system is that it sorts the actors after they're iterated -[m[41m[m
-[32m+[m		[32m// this way, each actor will be added in the same order everytime.[m[41m[m
-[32m+[m		[32m// The execution order of BeginPlay across actors isn't guaranteed, so we don't have the same luxury.[m[41m[m
-[32m+[m		[32m// If it causes issues with determinism, we can loop through all jolt physics components in AddAllJoltActors, and sort them there.[m[41m[m
-[32m+[m		[32m// For now though, this should be okay... hopefully.[m[41m[m
-[32m+[m		[32mMobility == EJoltMobility::Static ?[m[41m[m
-[32m+[m		[32m   JoltSubsystem->AddStaticBody(GetOwner(), Friction, Restitution, ResolvedLayer) :[m[41m[m
-[32m+[m		[32m   JoltSubsystem->AddDynamicBody(GetOwner(), Friction, Restitution, Mass, ResolvedLayer);[m[41m[m
-[32m+[m	[32m}[m[41m[m
-[32m+[m[32m}[m[41m[m
-[32m+[m[41m[m
-[32m+[m[32mvoid UJoltPhysicsComponent::OnRegister()[m[41m[m
- {[m
-[31m-	// Set this component to be initialized when the game starts, and to be ticked every frame.  You can turn these features[m
-[31m-	// off to improve performance if you don't need them.[m
-[31m-	PrimaryComponentTick.bCanEverTick = true;[m
-[32m+[m	[32mSuper::OnRegister();[m[41m[m
- [m
-[31m-	// ...[m
-[32m+[m	[32m#if WITH_EDITOR[m[41m[m
-[32m+[m	[32mif (!bOverrideMass) RecalculateMass();[m[41m[m
-[32m+[m	[32m#endif[m[41m[m
- }[m
- [m
- [m
-[31m-// Called when the game starts[m
-[31m-void UJoltPhysicsComponent::BeginPlay()[m
-[32m+[m[32mTArray<FString> UJoltPhysicsComponent::GetObjectLayerNames() const[m[41m[m
- {[m
-[31m-	Super::BeginPlay();[m
-[32m+[m	[32mconst UJoltSettings* Settings = GetDefault<UJoltSettings>();[m[41m[m
-[32m+[m	[32mif (!Settings) return {};[m[41m[m
- [m
-[31m-	// ...[m
-[31m-	[m
-[32m+[m	[32mconst FName ThisMobilityDefault = (Mobility == EJoltMobility::Static) ? Settings->DefaultStaticLayer : Settings->DefaultDynamicLayer;[m[41m[m
-[32m+[m	[32mconst FName OtherMobilityDefault = (Mobility == EJoltMobility::Static) ? Settings->DefaultDynamicLayer : Settings->DefaultStaticLayer;[m[41m[m
-[32m+[m[41m[m
-[32m+[m	[32mTArray<FString> Names;[m[41m[m
-[32m+[m	[32mNames.Reserve(Settings->ObjectLayers.Num());[m[41m[m
-[32m+[m	[32mfor (const FJoltObjectLayer& ObjLayer : Settings->ObjectLayers)[m[41m[m
-[32m+[m	[32m{[m[41m[m
-[32m+[m		[32m// Hide the other mobility's default layer. That way "Static" doesn't show up when mobility is "Dynamic", and vice-versa.[m[41m[m
-[32m+[m		[32mif (ObjLayer.Name.IsNone() || ObjLayer.Name == OtherMobilityDefault) continue;[m[41m[m
-[32m+[m[41m		[m
-[32m+[m		[32m// Show default instead of the real layer name. It'll always reflect the sentinel value, so it won't go stale if we change the default layer.[m[41m[m
-[32m+[m		[32mNames.Add(ObjLayer.Name == ThisMobilityDefault ? DefaultLayerSentinel.ToString() : ObjLayer.Name.ToString());[m[41m[m
-[32m+[m	[32m}[m[41m[m
-[32m+[m	[32mreturn Names;[m[41m[m
- }[m
- [m
-[32m+[m[32mFName UJoltPhysicsComponent::ResolveLayer() const[m[41m[m
-[32m+[m[32m{[m[41m[m
-[32m+[m	[32mif (Layer != DefaultLayerSentinel) return Layer;[m[41m[m
-[32m+[m[41m[m
-[32m+[m	[32mconst UJoltSettings* Settings = GetDefault<UJoltSettings>();[m[41m[m
-[32m+[m	[32mif (!Settings) return Layer;[m[41m[m
-[32m+[m[41m[m
-[32m+[m	[32mreturn (Mobility == EJoltMobility::Static) ? Settings->DefaultStaticLayer : Settings->DefaultDynamicLayer;[m[41m[m
-[32m+[m[32m}[m[41m[m
- [m
-[31m-// Called every frame[m
-[31m-void UJoltPhysicsComponent::TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction)[m
-[32m+[m[32mvoid UJoltPhysicsComponent::RecalculateMass()[m[41m[m
- {[m
-[31m-	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);[m
-[32m+[m	[32m// bOverrideMass means the user is hand-authoring mass.[m[41m[m
-[32m+[m	[32mif (bOverrideMass || !GetOwner()) return;[m[41m[m
-[32m+[m[41m[m
-[32m+[m	[32mTArray<UPrimitiveComponent*> PrimitiveComponents;[m[41m[m
-[32m+[m	[32mGetOwner()->GetComponents<UPrimitiveComponent>(PrimitiveComponents);[m[41m[m
-[32m+[m[41m[m
-[32m+[m	[32mfloat TotalMass = 0.0f;[m[41m[m
-[32m+[m	[32mfor (UPrimitiveComponent* PrimitiveComponent : PrimitiveComponents)[m[41m[m
-[32m+[m	[32m{[m[41m[m
-[32m+[m		[32mif (!PrimitiveComponent) continue;[m[41m[m
-[32m+[m[41m[m
-[32m+[m		[32mif (UBodySetup* BodySetup = PrimitiveComponent->GetBodySetup())[m[41m[m
-[32m+[m		[32m{[m[41m[m
-[32m+[m			[32mconst float ComputedMass = BodySetup->CalculateMass(PrimitiveComponent);[m[41m[m
-[32m+[m[41m			[m
-[32m+[m			[32mif (ComputedMass > 0.0f)[m[41m[m
-[32m+[m			[32m{[m[41m[m
-[32m+[m				[32mTotalMass += ComputedMass;[m[41m[m
-[32m+[m			[32m}[m[41m[m
-[32m+[m		[32m}[m[41m[m
-[32m+[m	[32m}[m[41m[m
- [m
-[31m-	// ...[m
-[32m+[m	[32mif (TotalMass > 0.0f)[m[41m[m
-[32m+[m	[32m{[m[41m[m
-[32m+[m		[32mMass = TotalMass;[m[41m[m
-[32m+[m	[32m}[m[41m[m
- }[m
- [m
-[32m+[m[32m#if WITH_EDITOR[m[41m[m
-[32m+[m[32mvoid UJoltPhysicsComponent::PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEvent)[m[41m[m
-[32m+[m[32m{[m[41m[m
-[32m+[m	[32mSuper::PostEditChangeProperty(PropertyChangedEvent);[m[41m[m
-[32m+[m[41m[m
-[32m+[m	[32mif (PropertyChangedEvent.Property == nullptr) return;[m[41m[m
-[32m+[m[41m[m
-[32m+[m	[32mconst FName ChangedProp = PropertyChangedEvent.Property->GetFName();[m[41m[m
-[32m+[m[41m[m
-[32m+[m	[32mif (ChangedProp == GET_MEMBER_NAME_CHECKED(UJoltPhysicsComponent, Mobility))[m[41m[m
-[32m+[m	[32m{[m[41m[m
-[32m+[m		[32mLayer = DefaultLayerSentinel;[m[41m[m
-[32m+[m[41m[m
-[32m+[m		[32mif (Mobility == EJoltMobility::Static)[m[41m[m
-[32m+[m		[32m{[m[41m[m
-[32m+[m			[32mbOverrideMass = false;[m[41m[m
-[32m+[m			[32mMass = 0.f;[m[41m[m
-[32m+[m		[32m} else {[m[41m[m
-[32m+[m			[32mRecalculateMass();[m[41m[m
-[32m+[m		[32m}[m[41m[m
-[32m+[m[41m[m
-[32m+[m	[32m}[m[41m[m
-[32m+[m	[32melse if (ChangedProp == GET_MEMBER_NAME_CHECKED(UJoltPhysicsComponent, bOverrideMass))[m[41m[m
-[32m+[m	[32m{[m[41m[m
-[32m+[m		[32mRecalculateMass();[m[41m[m
-[32m+[m	[32m}[m[41m[m
-[32m+[m[32m}[m[41m[m
-[32m+[m[32m#endif[m
-\ No newline at end of file[m
-[1mdiff --git a/Source/UnrealJolt/Public/JoltPhysicsComponent.h b/Source/UnrealJolt/Public/JoltPhysicsComponent.h[m
-[1mindex e0eead1..d22a95f 100644[m
-[1m--- a/Source/UnrealJolt/Public/JoltPhysicsComponent.h[m
-[1m+++ b/Source/UnrealJolt/Public/JoltPhysicsComponent.h[m
-[36m@@ -1,28 +1,62 @@[m
-[31m-﻿// Fill out your copyright notice in the Description page of Project Settings.[m
-[31m-[m
-[31m-#pragma once[m
-[32m+[m[32m﻿#pragma once[m[41m[m
- [m
- #include "CoreMinimal.h"[m
- #include "Components/ActorComponent.h"[m
- #include "JoltPhysicsComponent.generated.h"[m
- [m
-[32m+[m[32mUENUM(BlueprintType)[m[41m[m
-[32m+[m[32menum class EJoltMobility : uint8[m[41m[m
-[32m+[m[32m{[m[41m[m
-[32m+[m	[32mStatic,[m[41m[m
-[32m+[m	[32mDynamic,[m[41m[m
-[32m+[m[32m};[m[41m[m
- [m
-[32m+[m[32m/** An alternative to the tagging system. Allows you to specify mass, friction, restitution, and layer.[m[41m[m
-[32m+[m[32m    TO-DO: Helper functions (set mass, set restitution, set friction, etc.) */[m[41m[m
- UCLASS(ClassGroup=(Custom), meta=(BlueprintSpawnableComponent))[m
- class UNREALJOLT_API UJoltPhysicsComponent : public UActorComponent[m
- {[m
- 	GENERATED_BODY()[m
- [m
- public:[m
-[31m-	// Sets default values for this component's properties[m
- 	UJoltPhysicsComponent();[m
- [m
- protected:[m
-[31m-	// Called when the game starts[m
- 	virtual void BeginPlay() override;[m
-[31m-[m
-[32m+[m	[32mvirtual void OnRegister() override;[m[41m[m
-[32m+[m[41m	[m
- public:[m
-[31m-	// Called every frame[m
-[31m-	virtual void TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction) override;[m
-[31m-[m
-[31m-[m
-[32m+[m	[32m/** Whether this body is static (immovable, zero mass) or dynamic (simulated, affected by forces). */[m[41m[m
-[32m+[m	[32mUPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Jolt Physics")[m[41m[m
-[32m+[m	[32mEJoltMobility Mobility = EJoltMobility::Static;[m[41m[m
-[32m+[m[41m[m
-[32m+[m	[32m/** Jolt object layer this body is placed on, used for collision filtering. "Default" resolves to the project's default layer for the selected Mobility. */[m[41m[m
-[32m+[m	[32mUPROPERTY(EditAnywhere, Category = "Jolt Physics", meta = (GetOptions = "GetObjectLayerNames"))[m[41m[m
-[32m+[m	[32mFName Layer = FName("Default");[m[41m[m
-[32m+[m[41m[m
-[32m+[m	[32mUPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Jolt Physics", meta = (InlineEditConditionToggle))[m[41m[m
-[32m+[m	[32mbool bOverrideMass = false;[m[41m[m
-[32m+[m[41m	[m
-[32m+[m	[32m/** Mass of the body in KG. When bOverrideMass is off, this is computed based on physical material and collision geometry. */[m[41m[m
-[32m+[m	[32mUPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Jolt Physics", meta = (EditCondition = "bOverrideMass", UIMin = "0.001", Units = "Kilograms"))[m[41m[m
-[32m+[m	[32mfloat Mass = 100.0f;[m[41m[m
-[32m+[m[41m[m
-[32m+[m	[32m/** Coefficient of friction applied to this body. Higher values resist sliding against other surfaces. */[m[41m[m
-[32m+[m	[32mUPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Jolt Physics")[m[41m[m
-[32m+[m	[32mfloat Friction = 2.0f;[m[41m[m
-[32m+[m[41m[m
-[32m+[m	[32m/** Coefficient of restitution (bounciness). 0 = no bounce, 1 = fully elastic bounce. */[m[41m[m
-[32m+[m	[32mUPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Jolt Physics")[m[41m[m
-[32m+[m	[32mfloat Restitution = 0.5f;[m[41m[m
-[32m+[m[41m	[m
-[32m+[m[32mprivate:[m[41m[m
-[32m+[m	[32mUFUNCTION()[m[41m[m
-[32m+[m[32m    TArray<FString> GetObjectLayerNames() const;[m[41m[m
-[32m+[m[41m	[m
-[32m+[m	[32mFName ResolveLayer() const;[m[41m[m
-[32m+[m	[32mvoid  RecalculateMass();[m[41m[m
-[32m+[m[41m	[m
-[32m+[m	[32m#if WITH_EDITOR[m[41m[m
-[32m+[m	[32mvirtual void PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEvent) override;[m[41m[m
-[32m+[m	[32m#endif[m[41m[m
- };[m
-\ No newline at end of file[m
-[1mdiff --git a/Source/UnrealJolt/Public/JoltSubsystem.h b/Source/UnrealJolt/Public/JoltSubsystem.h[m
-[1mindex a5ba85d..a76b00e 100644[m
-[1m--- a/Source/UnrealJolt/Public/JoltSubsystem.h[m
-[1m+++ b/Source/UnrealJolt/Public/JoltSubsystem.h[m
-[36m@@ -12,6 +12,7 @@[m
- #include "JoltLayerTable.h"[m
- #include "JoltFilters.h"[m
- #include "Delegates/DelegateCombinations.h"[m
-[32m+[m[32m#include "Engine/Engine.h"[m
- #include "UObject/ObjectMacros.h"[m
- [m
- #ifdef JPH_DEBUG_RENDERER[m
-[36m@@ -481,3 +482,16 @@[m [mpublic:[m
- 	friend class UJoltSkeletalMeshComponent;[m
- 	friend class JoltAxisConstraint;[m
- };[m
-[32m+[m
-[32m+[m[32minline UJoltSubsystem* GetJoltSubsystem(const UObject* WorldContextObject)[m
-[32m+[m[32m{[m
-[32m+[m	[32mif (WorldContextObject)[m
-[32m+[m	[32m{[m
-[32m+[m		[32mif (UWorld* World = GEngine->GetWorldFromContextObject(WorldContextObject, EGetWorldErrorMode::ReturnNull))[m
-[32m+[m		[32m{[m
-[32m+[m			[32mreturn World->GetSubsystem<UJoltSubsystem>();[m
-[32m+[m		[32m}[m
-[32m+[m	[32m}[m
-[32m+[m[41m	[m
-[32m+[m	[32mreturn nullptr;[m
-[32m+[m[32m}[m
-\ No newline at end of file[m
-[1mdiff --git a/Source/UnrealJoltEditor/Private/JoltMobilityCustomization.cpp b/Source/UnrealJoltEditor/Private/JoltMobilityCustomization.cpp[m
-[1mindex 8e196b3..b208153 100644[m
-[1m--- a/Source/UnrealJoltEditor/Private/JoltMobilityCustomization.cpp[m
-[1m+++ b/Source/UnrealJoltEditor/Private/JoltMobilityCustomization.cpp[m
-[36m@@ -1,4 +1,136 @@[m
-[31m-﻿// Fill out your copyright notice in the Description page of Project Settings.[m
-[32m+[m[32m﻿#include "JoltMobilityCustomization.h"[m[41m[m
-[32m+[m[32m#include "JoltPhysicsComponent.h"[m[41m[m
-[32m+[m[32m#include "DetailCategoryBuilder.h"[m[41m[m
-[32m+[m[32m#include "DetailLayoutBuilder.h"[m[41m[m
-[32m+[m[32m#include "DetailWidgetRow.h"[m[41m[m
-[32m+[m[32m#include "Fonts/SlateFontInfo.h"[m[41m[m
-[32m+[m[32m#include "Internationalization/Internationalization.h"[m[41m[m
-[32m+[m[32m#include "PropertyHandle.h"[m[41m[m
-[32m+[m[32m#include "Styling/AppStyle.h"[m[41m[m
-[32m+[m[32m#include "Widgets/DeclarativeSyntaxSupport.h"[m[41m[m
-[32m+[m[32m#include "Widgets/Input/SSegmentedControl.h"[m[41m[m
-[32m+[m[32m#include "Widgets/Text/STextBlock.h"[m[41m[m
- [m
-[32m+[m[32m#define LOCTEXT_NAMESPACE "JoltMobilityCustomization"[m[41m[m
- [m
-[31m-#include "JoltMobilityCustomization.h"[m
-\ No newline at end of file[m
-[32m+[m[32mFJoltMobilityCustomization::FJoltMobilityCustomization(TSharedPtr<IPropertyHandle> InMobilityHandle)[m[41m[m
-[32m+[m[32m{[m[41m[m
-[32m+[m[32m    MobilityHandle = InMobilityHandle;[m[41m[m
-[32m+[m[32m    MobilityHandle->MarkHiddenByCustomization();[m[41m[m
-[32m+[m[32m}[m[41m[m
-[32m+[m[41m[m
-[32m+[m[32mFName FJoltMobilityCustomization::GetName() const[m[41m[m
-[32m+[m[32m{[m[41m[m
-[32m+[m[32m    const FProperty* Property = MobilityHandle->GetProperty();[m[41m[m
-[32m+[m[32m    if (Property != nullptr)[m[41m[m
-[32m+[m[32m    {[m[41m[m
-[32m+[m[32m       return Property->GetFName();[m[41m[m
-[32m+[m[32m    }[m[41m[m
-[32m+[m[32m    return NAME_None;[m[41m[m
-[32m+[m[32m}[m[41m[m
-[32m+[m[41m[m
-[32m+[m[32mvoid FJoltMobilityCustomization::GenerateHeaderRowContent(FDetailWidgetRow& WidgetRow)[m[41m[m
-[32m+[m[32m{[m[41m[m
-[32m+[m[32m    TSharedRef<SSegmentedControl<EJoltMobility>> ButtonOptionsPanel =[m[41m[m
-[32m+[m[32m       SNew(SSegmentedControl<EJoltMobility>)[m[41m[m
-[32m+[m[32m       .Value(this, &FJoltMobilityCustomization::GetActiveMobility)[m[41m[m
-[32m+[m[32m       .OnValueChanged(this, &FJoltMobilityCustomization::OnMobilityChanged);[m[41m[m
-[32m+[m[41m[m
-[32m+[m[32m    WidgetRow[m[41m[m
-[32m+[m[32m    .NameContent()[m[41m[m
-[32m+[m[32m    [[m[41m[m
-[32m+[m[32m       SNew(STextBlock)[m[41m[m
-[32m+[m[32m       .Text(LOCTEXT("Mobility", "Mobility"))[m[41m[m
-[32m+[m[32m       .ToolTipText(this, &FJoltMobilityCustomization::GetMobilityToolTip)[m[41m[m
-[32m+[m[32m       .Font(IDetailLayoutBuilder::GetDetailFont())[m[41m[m
-[32m+[m[32m    ][m[41m[m
-[32m+[m[32m    .ValueContent()[m[41m[m
-[32m+[m[32m    .MaxDesiredWidth(0)[m[41m[m
-[32m+[m[32m    [[m[41m[m
-[32m+[m[32m       ButtonOptionsPanel[m[41m[m
-[32m+[m[32m    ][m[41m[m
-[32m+[m[32m    .FilterString(LOCTEXT("Mobility", "Mobility"));[m[41m[m
-[32m+[m[41m[m
-[32m+[m[32m    // Static Mobility[m[41m[m
-[32m+[m[32m    ButtonOptionsPanel->AddSlot(EJoltMobility::Static)[m[41m[m
-[32m+[m[32m    .HAlign(HAlign_Center)[m[41m[m
-[32m+[m[32m    .VAlign(VAlign_Center)[m[41m[m
-[32m+[m[32m    [[m[41m[m
-[32m+[m[32m       SNew(STextBlock)[m[41m[m
-[32m+[m[32m       .Font(FAppStyle::Get().GetFontStyle("PropertyWindow.MobilityFont"))[m[41m[m
-[32m+[m[32m       .Text(LOCTEXT("Static", "Static"))[m[41m[m
-[32m+[m[32m    ][m[41m[m
-[32m+[m[32m    .ToolTip(LOCTEXT("Mobility_Static_Tooltip", "A static body cannot move and has no mass.\n* Fastest simulation\n* Cannot be moved at runtime"));[m[41m[m
-[32m+[m[41m[m
-[32m+[m[32m    // Dynamic Mobility[m[41m[m
-[32m+[m[32m    ButtonOptionsPanel->AddSlot(EJoltMobility::Dynamic)[m[41m[m
-[32m+[m[32m    .HAlign(HAlign_Center)[m[41m[m
-[32m+[m[32m    .VAlign(VAlign_Center)[m[41m[m
-[32m+[m[32m    [[m[41m[m
-[32m+[m[32m       SNew(STextBlock)[m[41m[m
-[32m+[m[32m       .Font(FAppStyle::Get().GetFontStyle("PropertyWindow.MobilityFont"))[m[41m[m
-[32m+[m[32m       .Text(LOCTEXT("Dynamic", "Dynamic"))[m[41m[m
-[32m+[m[32m    ][m[41m[m
-[32m+[m[32m    .ToolTip(LOCTEXT("Mobility_Dynamic_Tooltip", "A dynamic body is simulated by Jolt and affected by forces, mass, friction, and restitution."));[m[41m[m
-[32m+[m[41m[m
-[32m+[m[32m    ButtonOptionsPanel->RebuildChildren();[m[41m[m
-[32m+[m[32m}[m[41m[m
-[32m+[m[41m[m
-[32m+[m[32mEJoltMobility FJoltMobilityCustomization::GetActiveMobility() const[m[41m[m
-[32m+[m[32m{[m[41m[m
-[32m+[m[32m    if (MobilityHandle.IsValid())[m[41m[m
-[32m+[m[32m    {[m[41m[m
-[32m+[m[32m       uint8 MobilityByte;[m[41m[m
-[32m+[m[32m       MobilityHandle->GetValue(MobilityByte);[m[41m[m
-[32m+[m[41m[m
-[32m+[m[32m       return (EJoltMobility)MobilityByte;[m[41m[m
-[32m+[m[32m    }[m[41m[m
-[32m+[m[41m[m
-[32m+[m[32m    return EJoltMobility::Static;[m[41m[m
-[32m+[m[32m}[m[41m[m
-[32m+[m[41m[m
-[32m+[m[32mFSlateColor FJoltMobilityCustomization::GetMobilityTextColor(EJoltMobility InMobility) const[m[41m[m
-[32m+[m[32m{[m[41m[m
-[32m+[m[32m    if (MobilityHandle.IsValid())[m[41m[m
-[32m+[m[32m    {[m[41m[m
-[32m+[m[32m       uint8 MobilityByte;[m[41m[m
-[32m+[m[32m       MobilityHandle->GetValue(MobilityByte);[m[41m[m
-[32m+[m[41m[m
-[32m+[m[32m       return MobilityByte == (uint8)InMobility ? FSlateColor(FLinearColor(0, 0, 0)) : FSlateColor(FLinearColor(0.72f, 0.72f, 0.72f, 1.f));[m[41m[m
-[32m+[m[32m    }[m[41m[m
-[32m+[m[41m[m
-[32m+[m[32m    return FSlateColor(FLinearColor(0.72f, 0.72f, 0.72f, 1.f));[m[41m[m
-[32m+[m[32m}[m[41m[m
-[32m+[m[41m[m
-[32m+[m[32mvoid FJoltMobilityCustomization::OnMobilityChanged(EJoltMobility InMobility)[m[41m[m
-[32m+[m[32m{[m[41m[m
-[32m+[m[32m    if (MobilityHandle.IsValid())[m[41m[m
-[32m+[m[32m    {[m[41m[m
-[32m+[m[32m       MobilityHandle->SetValue((uint8)InMobility);[m[41m[m
-[32m+[m[32m    }[m[41m[m
-[32m+[m[32m}[m[41m[m
-[32m+[m[41m[m
-[32m+[m[32mFText FJoltMobilityCustomization::GetMobilityToolTip() const[m[41m[m
-[32m+[m[32m{[m[41m[m
-[32m+[m[32m    if (MobilityHandle.IsValid())[m[41m[m
-[32m+[m[32m    {[m[41m[m
-[32m+[m[32m       return MobilityHandle->GetToolTipText();[m[41m[m
-[32m+[m[32m    }[m[41m[m
-[32m+[m[41m[m
-[32m+[m[32m    return FText::GetEmpty();[m[41m[m
-[32m+[m[32m}[m[41m[m
-[32m+[m[41m[m
-[32m+[m[32mTSharedRef<IDetailCustomization> FJoltPhysicsComponentDetails::MakeInstance()[m[41m[m
-[32m+[m[32m{[m[41m[m
-[32m+[m[32m    return MakeShared<FJoltPhysicsComponentDetails>();[m[41m[m
-[32m+[m[32m}[m[41m[m
-[32m+[m[41m[m
-[32m+[m[32mvoid FJoltPhysicsComponentDetails::CustomizeDetails(IDetailLayoutBuilder& DetailBuilder)[m[41m[m
-[32m+[m[32m{[m[41m[m
-[32m+[m[32m    TSharedPtr<IPropertyHandle> MobilityHandle = DetailBuilder.GetProperty(GET_MEMBER_NAME_CHECKED(UJoltPhysicsComponent, Mobility));[m[41m[m
-[32m+[m[41m[m
-[32m+[m[32m    IDetailCategoryBuilder& Category = DetailBuilder.EditCategory("Jolt Physics");[m[41m[m
-[32m+[m[32m    Category.AddCustomBuilder(MakeShared<FJoltMobilityCustomization>(MobilityHandle));[m[41m[m
-[32m+[m[32m}[m[41m[m
-[32m+[m[41m[m
-[32m+[m[32m#undef LOCTEXT_NAMESPACE[m
-\ No newline at end of file[m
-[1mdiff --git a/Source/UnrealJoltEditor/Private/JoltMobilityCustomization.h b/Source/UnrealJoltEditor/Private/JoltMobilityCustomization.h[m
-[1mindex b3551e0..d45e75b 100644[m
-[1m--- a/Source/UnrealJoltEditor/Private/JoltMobilityCustomization.h[m
-[1m+++ b/Source/UnrealJoltEditor/Private/JoltMobilityCustomization.h[m
-[36m@@ -1,18 +1,48 @@[m
-[31m-﻿// Fill out your copyright notice in the Description page of Project Settings.[m
-[31m-[m
-[31m-#pragma once[m
-[32m+[m[32m﻿#pragma once[m[41m[m
- [m
- #include "CoreMinimal.h"[m
-[31m-#include "UObject/Object.h"[m
-[31m-#include "JoltMobilityCustomization.generated.h"[m
-[31m-[m
-[31m-/**[m
-[31m- * [m
-[31m- */[m
-[31m-UCLASS()[m
-[31m-class UNREALJOLTEDITOR_API UJoltMobilityCustomization : public UObject[m
-[32m+[m[32m#include "HAL/Platform.h"[m[41m[m
-[32m+[m[32m#include "IDetailCustomization.h"[m[41m[m
-[32m+[m[32m#include "IDetailCustomNodeBuilder.h"[m[41m[m
-[32m+[m[32m#include "Internationalization/Text.h"[m[41m[m
-[32m+[m[32m#include "Styling/SlateColor.h"[m[41m[m
-[32m+[m[32m#include "Templates/SharedPointer.h"[m[41m[m
-[32m+[m[32m#include "UObject/NameTypes.h"[m[41m[m
-[32m+[m[41m[m
-[32m+[m[32mclass FDetailWidgetRow;[m[41m[m
-[32m+[m[32mclass IDetailCategoryBuilder;[m[41m[m
-[32m+[m[32mclass IDetailLayoutBuilder;[m[41m[m
-[32m+[m[32mclass IPropertyHandle;[m[41m[m
-[32m+[m[41m[m
-[32m+[m[32menum class EJoltMobility : uint8;[m[41m[m
-[32m+[m[41m[m
-[32m+[m[32mclass FJoltMobilityCustomization : public IDetailCustomNodeBuilder, public TSharedFromThis<FJoltMobilityCustomization>[m[41m[m
- {[m
-[31m-	GENERATED_BODY()[m
-[32m+[m[32mpublic:[m[41m[m
-[32m+[m	[32mexplicit FJoltMobilityCustomization(TSharedPtr<IPropertyHandle> InMobilityHandle);[m[41m[m
-[32m+[m[41m[m
-[32m+[m	[32mvirtual void GenerateHeaderRowContent(FDetailWidgetRow& WidgetRow) override;[m[41m[m
-[32m+[m	[32mvirtual FName GetName() const override;[m[41m[m
-[32m+[m	[32mvirtual TSharedPtr<IPropertyHandle> GetPropertyHandle() const override { return MobilityHandle; }[m[41m[m
- [m
-[32m+[m	[32mvirtual void SetOnRebuildChildren(FSimpleDelegate InOnRegenerateChildren) override {}[m[41m[m
-[32m+[m	[32mvirtual void GenerateChildContent(IDetailChildrenBuilder& ChildrenBuilder) override {}[m[41m[m
-[32m+[m	[32mvirtual bool RequiresTick() const override { return false; }[m[41m[m
-[32m+[m	[32mvirtual bool InitiallyCollapsed() const override { return false; }[m[41m[m
- [m
-[32m+[m[32mprivate:[m[41m[m
-[32m+[m	[32mEJoltMobility GetActiveMobility() const;[m[41m[m
-[32m+[m	[32mFSlateColor GetMobilityTextColor(EJoltMobility InMobility) const;[m[41m[m
-[32m+[m	[32mvoid OnMobilityChanged(EJoltMobility InMobility);[m[41m[m
-[32m+[m	[32mFText GetMobilityToolTip() const;[m[41m[m
-[32m+[m[41m[m
-[32m+[m	[32mTSharedPtr<IPropertyHandle> MobilityHandle;[m[41m[m
- };[m
-[32m+[m[41m[m
-[32m+[m[32mclass FJoltPhysicsComponentDetails : public IDetailCustomization[m[41m[m
-[32m+[m[32m{[m[41m[m
-[32m+[m[32mpublic:[m[41m[m
-[32m+[m	[32mstatic TSharedRef<IDetailCustomization> MakeInstance();[m[41m[m
-[32m+[m[41m[m
-[32m+[m	[32mvirtual void CustomizeDetails(IDetailLayoutBuilder& DetailBuilder) override;[m[41m[m
-[32m+[m[32m};[m
-\ No newline at end of file[m
-[1mdiff --git a/Source/UnrealJoltEditor/Private/UnrealJoltEditor.cpp b/Source/UnrealJoltEditor/Private/UnrealJoltEditor.cpp[m
-[1mindex 5a1c34b..9f2081c 100644[m
-[1m--- a/Source/UnrealJoltEditor/Private/UnrealJoltEditor.cpp[m
-[1m+++ b/Source/UnrealJoltEditor/Private/UnrealJoltEditor.cpp[m
-[36m@@ -1,4 +1,7 @@[m
- #include "UnrealJoltEditor.h"[m
-[32m+[m
-[32m+[m[32m#include "JoltMobilityCustomization.h"[m
-[32m+[m[32m#include "JoltPhysicsComponent.h"[m
- #include "JoltSettings.h"[m
- #include "JoltSettingsDetails.h"[m
- #include "Modules/ModuleManager.h"[m
-[36m@@ -11,8 +14,12 @@[m [mvoid FUnrealJoltEditorModule::StartupModule()[m
- 	FPropertyEditorModule& PropertyModule = FModuleManager::LoadModuleChecked<FPropertyEditorModule>("PropertyEditor");[m
- [m
- 	PropertyModule.RegisterCustomClassLayout([m
-[31m-		UJoltSettings::StaticClass()->GetFName(),[m
-[31m-		FOnGetDetailCustomizationInstance::CreateStatic(&FJoltSettingsDetails::MakeInstance));[m
-[32m+[m	[32m   UJoltSettings::StaticClass()->GetFName(),[m
-[32m+[m	[32m   FOnGetDetailCustomizationInstance::CreateStatic(&FJoltSettingsDetails::MakeInstance));[m
-[32m+[m
-[32m+[m	[32mPropertyModule.RegisterCustomClassLayout([m
-[32m+[m	[32m   UJoltPhysicsComponent::StaticClass()->GetFName(),[m
-[32m+[m	[32m   FOnGetDetailCustomizationInstance::CreateStatic(&FJoltPhysicsComponentDetails::MakeInstance));[m
- [m
- 	PropertyModule.NotifyCustomizationModuleChanged();[m
- }[m
-[36m@@ -23,6 +30,7 @@[m [mvoid FUnrealJoltEditorModule::ShutdownModule()[m
- 	{[m
- 		FPropertyEditorModule& PropertyModule = FModuleManager::GetModuleChecked<FPropertyEditorModule>("PropertyEditor");[m
- 		PropertyModule.UnregisterCustomClassLayout(UJoltSettings::StaticClass()->GetFName());[m
-[32m+[m		[32mPropertyModule.UnregisterCustomClassLayout(UJoltPhysicsComponent::StaticClass()->GetFName());[m
- 		PropertyModule.NotifyCustomizationModuleChanged();[m
- 	}[m
- }[m

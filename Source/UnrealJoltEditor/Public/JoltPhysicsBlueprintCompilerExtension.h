@@ -13,5 +13,8 @@ class UJoltPhysicsBlueprintCompilerExtension : public UBlueprintCompilerExtensio
 	GENERATED_BODY()
 
 protected:
+	/** Return true is actor has a component class. */
+	static bool DoesActorClassHaveComponent(UClass* ActorClass, UClass* RequiredComponentClass);
+	
 	virtual void ProcessBlueprintCompiled(const FKismetCompilerContext& CompilationContext, const FBlueprintCompiledData& Data) override;
 };
