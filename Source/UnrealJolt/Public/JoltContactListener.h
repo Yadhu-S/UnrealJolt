@@ -35,22 +35,22 @@ struct FContactInfo
 		, Phase(Phase) {}
 
 	UPROPERTY(BlueprintReadOnly, Category = "Jolt Physics")
-	int32 BodyID1;
+	int32 BodyID1 = 0;
 
 	UPROPERTY(BlueprintReadOnly, Category = "Jolt Physics")
-	int32 BodyID2;
+	int32 BodyID2 = 0;
 
 	UPROPERTY(BlueprintReadOnly, Category = "Jolt Physics")
-	FVector BodyID1ContactLocation;
+	FVector BodyID1ContactLocation = FVector::ZeroVector;
 
 	UPROPERTY(BlueprintReadOnly, Category = "Jolt Physics")
-	FVector BodyID2ContactLocation;
+	FVector BodyID2ContactLocation = FVector::ZeroVector;
 
 	UPROPERTY(BlueprintReadOnly, Category = "Jolt Physics")
-	float NormalImpulse;
+	float NormalImpulse = 0.f;
 
 	UPROPERTY(BlueprintReadOnly, Category = "Jolt Physics")
-	FVector NormalDir;
+	FVector NormalDir = FVector::ZeroVector;
 
 	// Surface type of body1 at the contact sub-shape — resolved from the
 	// Jolt JoltPhysicsMaterial bound to that shape (originating from the UE
