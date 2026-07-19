@@ -11,6 +11,7 @@
 #include "Subsystems/WorldSubsystem.h"
 #include "JoltLayerTable.h"
 #include "JoltFilters.h"
+#include "JoltPhysicsCallbackInterface.h"
 #include "Delegates/DelegateCombinations.h"
 #include "Engine/Engine.h"
 #include "UObject/ObjectMacros.h"
@@ -26,6 +27,7 @@
 class UJoltSkeletalMeshComponent;
 class JoltAxisConstraint;
 class JoltPhysicsMaterial;
+class ULandscapeComponent;
 
 UDELEGATE(BlueprintCallable)
 DECLARE_DYNAMIC_DELEGATE_FourParams(FNarrowPhaseQueryDelegate, const FVector&, hitLocation, const FVector&, hitNormal, bool, bHasHit, const int32, hitBodyID);
@@ -264,9 +266,15 @@ public:
 	bool IsPaused() const { return bStepPaused; }
 
 	UFUNCTION(BlueprintCallable, Category = "Jolt Physics")
-	bool GetContactInfo(FContactInfo& contactInfo) const { return ContactListener->Consume(contactInfo); }
-	
-	UEJoltCallBackContactListener* GetContactListener() { return ContactListener; }
+	void SetGravity(const FVector& gravity);
+
+	UFUNCTION(BlueprintCallable, Category = "Jolt Physics")
+	FVector GetGravity() const;
+
+	UFUNCTION(BlueprintCallable, Category = "Jolt Physics")
+	bool GetContactInfo(FContactInfo& contactInfo) const { return ContactListener->Consume(contactInfo); };
+
+	UEJoltCallBackContactListener* GetContactListener() { return ContactListener; };
 
 	void JoltSetLinearAndAngularVelocity(const JPH::BodyID& bodyID, const FVector& velocity, const FVector& angularVelocity) const;
 
@@ -336,6 +344,16 @@ public:
 	/** Fired once per frame after InterpolatePhysicsFrame completes. dt = frame delta. */
 	void AddPostInterpolationCallback(const TDelegate<void(float)>& callback);
 
+	// Blueprint physics callback listeners
+	
+	/** Register an actor as a listener for pre and post physics step callbacks. Must implement IJoltPhysicsCallbackInterface. */
+	UFUNCTION(BlueprintCallable, Category = "Jolt Physics|Callbacks", meta = (DefaultToSelf = "Listener"))
+	void RegisterPhysicsListener(AActor* Listener);
+
+	/** Unregister an actor as a listener for pre and post physics step callbacks. Must implement IJoltPhysicsCallbackInterface. */
+	UFUNCTION(BlueprintCallable, Category = "Jolt Physics|Callbacks", meta = (DefaultToSelf = "Listener"))
+	void UnregisterPhysicsListener(AActor* Listener);
+	
 	/** Physics-frame interpolation alpha (0..1) computed in the most recent Tick. */
 	double GetPhysicsAlpha() const { return PhysicsAlpha_; }
 
@@ -358,7 +376,7 @@ public:
 
 	const JPH::ObjectLayerPairFilter* GetObjectLayerPairFilter() const { return ObjectVsObjectLayerFilter; }
 
-	const JPH::BodyID*	AddDynamicBodyForExternalOwner(
+	const JPH::BodyID* AddDynamicBodyForExternalOwner(
 		const JPH::BodyID& bodyID,
 		const JPH::Shape*  shape,
 		const FTransform&  initialWorldTransform,
@@ -369,10 +387,18 @@ public:
 	// in Jolt AND drops the BodyIDBodyMap entry.
 	void RemoveBodyForExternalOwner(const JPH::BodyID& bodyID);
 
+	const UPhysicalMaterial* GetUEPhysicsMaterial(const JoltPhysicsMaterial* JoltPhysicsMat) const;
+
 private:
 	const JoltPhysicsMaterial* GetJoltPhysicsMaterial(const UPhysicalMaterial* UEPhysicsMat);
 
-	const UPhysicalMaterial* GetUEPhysicsMaterial(const JoltPhysicsMaterial* JoltPhysicsMat) const;
+	/* we are mappign a surface to a physics material unlike in ue where you can have many materials with same surface
+	 * for now, if you want to spawn and effect for same surface for example, use one fo the EPhysicsSurface
+	 * Dry_Asphalt, and Wet_Asphalt for example
+	 */
+	const JoltPhysicsMaterial* GetOrCreateJoltMaterialForSurface(EPhysicalSurface surfaceType, float friction, float restitution);
+
+	void RestoreShapeMaterials(const FJoltShapeData& shapeData, const JPH::Ref<JPH::Shape>& loadedShape);
 
 	const JPH::BoxShape* GetBoxCollisionShape(const FVector& dimensions, const JoltPhysicsMaterial* material = nullptr);
 
@@ -483,6 +509,8 @@ private:
 #if WITH_EDITOR
 	void GetAllLandscapeHeights(const ALandscape* landscapeActor);
 
+	bool BuildLandscapeMaterialIndices(ULandscapeComponent* landscapeComponent, uint32 componentSize, TArray<uint8>& outMaterialIndices, JPH::PhysicsMaterialList& outMaterialList);
+
 	bool CookBodies() const;
 
 	void HandleLandscapeMeshes(const ALandscape* LandscapeActor);
@@ -543,6 +571,12 @@ private:
 	TMap<const JPH::BodyID*, FFrameHistory> JoltBodyTransformHistory;
 
 	TArray<TDelegate<void(float)>> PostInterpolationCallbacks;
+	
+	void BroadcastPrePhysicsListeners(float DeltaTime);
+	void BroadcastPostPhysicsListeners(float DeltaTime);
+	
+	UPROPERTY() 
+	TArray<TWeakObjectPtr<UObject>> PhysicsListeners;
 
 	bool bIsReady = false;
 
