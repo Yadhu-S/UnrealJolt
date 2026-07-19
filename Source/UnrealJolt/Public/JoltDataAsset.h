@@ -11,6 +11,28 @@
 #include "JoltDataAsset.generated.h"
 
 USTRUCT()
+struct FJoltShapeMaterialData
+{
+	GENERATED_USTRUCT_BODY()
+
+	static constexpr uint8 NullMaterialSlot = 255;
+
+	uint8 SurfaceType = NullMaterialSlot;
+
+	float Friction = 0.f;
+
+	float Restitution = 0.f;
+
+	friend FArchive& operator<<(FArchive& Ar, FJoltShapeMaterialData& Material)
+	{
+		Ar << Material.SurfaceType;
+		Ar << Material.Friction;
+		Ar << Material.Restitution;
+		return Ar;
+	}
+};
+
+USTRUCT()
 struct FJoltShapeData
 {
 	GENERATED_USTRUCT_BODY()
@@ -27,6 +49,8 @@ struct FJoltShapeData
 
 	float Restitution;
 
+	TArray<FJoltShapeMaterialData> Materials;
+
 	friend FArchive& operator<<(FArchive& Ar, FJoltShapeData& Component)
 	{
 		Ar << Component.BinaryData;
@@ -35,6 +59,7 @@ struct FJoltShapeData
 		Ar << Component.LayerName;
 		Ar << Component.Friction;
 		Ar << Component.Restitution;
+		Ar << Component.Materials;
 		return Ar;
 	}
 };
