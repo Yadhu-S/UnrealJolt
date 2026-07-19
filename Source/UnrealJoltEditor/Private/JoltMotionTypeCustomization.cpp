@@ -53,7 +53,7 @@ void FJoltMotionTypeCustomization::CustomizeHeader(TSharedRef<IPropertyHandle> P
 		.Font(FAppStyle::Get().GetFontStyle("PropertyWindow.MobilityFont"))
 		.Text(LOCTEXT("Static", "Static"))
 	]
-	.ToolTip(LOCTEXT("MotionType_Static_Tooltip", "A static body cannot move and has no mass.\n* Fastest simulation\n* Cannot be moved at runtime"));
+	.ToolTip(LOCTEXT("MotionType_Static_Tooltip", "A static body cannot move and has no mass. Ideal for level geometry.\n* Fastest simulation\n* Collides with dynamic bodies"));
 
 	// Dynamic Motion Type
 	ButtonOptionsPanel->AddSlot(EJoltMotionType::Dynamic)
@@ -64,7 +64,7 @@ void FJoltMotionTypeCustomization::CustomizeHeader(TSharedRef<IPropertyHandle> P
 		.Font(FAppStyle::Get().GetFontStyle("PropertyWindow.MobilityFont"))
 		.Text(LOCTEXT("Dynamic", "Dynamic"))
 	]
-	.ToolTip(LOCTEXT("MotionType_Dynamic_Tooltip", "A dynamic body is simulated by Jolt and affected by forces, mass, friction, and restitution."));
+	.ToolTip(LOCTEXT("MotionType_Dynamic_Tooltip", "A dynamic body is simulated by Jolt and affected by forces.\n* Collides with static and dynamic bodies\n* Fully driven by physics at runtime"));
 
 	ButtonOptionsPanel->RebuildChildren();
 }

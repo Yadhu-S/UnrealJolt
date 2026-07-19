@@ -61,12 +61,12 @@ void UJoltPhysicsComponent::BeginPlay()
 		   JoltSubsystem->AddDynamicBody(GetOwner(), Friction, Restitution, Mass, ResolvedLayer);
 		
 		if (BodyID == JPH::BodyID::cInvalidBodyID) return;
+		const JPH::BodyID& Body = JPH::BodyID(BodyID);
 		
 		// Not a massive fan of this, I feel like it would be more appropriate to pass it through AddStatic/DynamicBody.
 		// Maybe pass a struct through them instead of a billion parameters - but that would be a decently sized change. 
-		if (MotionType == EJoltMotionType::Dynamic)
+		if (MotionType != EJoltMotionType::Static)
 		{
-			const JPH::BodyID& Body = JPH::BodyID(BodyID);
 			JoltSubsystem->JoltSetAllowedDOFs(Body, AllowedDOFs);
 			JoltSubsystem->JoltSetGravityFactor(Body, GravityFactor);
 			JoltSubsystem->JoltSetApplyGyroscopicForce(Body, bApplyGyroscopicForce);
@@ -75,12 +75,13 @@ void UJoltPhysicsComponent::BeginPlay()
 			JoltSubsystem->JoltSetLinearDamping(Body, LinearDamping);
 			JoltSubsystem->JoltSetAngularDamping(Body, AngularDamping);
 			JoltSubsystem->JoltSetAllowSleeping(Body, bAllowSleeping);
-			JoltSubsystem->JoltSetEnhancedInternalEdgeRemoval(Body, bEnhancedInternalEdgeRemoval);
 
 			// 0 means unset, so skip the override and let Jolt use its default
 			if (NumVelocityStepsOverride != 0) JoltSubsystem->JoltSetNumVelocityStepsOverride(Body, NumVelocityStepsOverride);
 			if (NumPositionStepsOverride != 0) JoltSubsystem->JoltSetNumPositionStepsOverride(Body, NumPositionStepsOverride);
 		}
+		
+		JoltSubsystem->JoltSetEnhancedInternalEdgeRemoval(Body, bEnhancedInternalEdgeRemoval);
 	}
 }
 
@@ -286,15 +287,6 @@ void UJoltPhysicsComponent::PostEditChangeProperty(FPropertyChangedEvent& Proper
 	{
 		// Static/Dynamic have different default layers, so fall back to the sentinel
 		Layer = DefaultLayerSentinel;
-
-		if (MotionType == EJoltMotionType::Static)
-		{
-			bOverrideMass = false;
-			Mass = 0.f;
-		} else {
-			RecalculateMass();
-		}
-
 	}
 	else if (ChangedProp == GET_MEMBER_NAME_CHECKED(UJoltPhysicsComponent, bOverrideMass))
 	{

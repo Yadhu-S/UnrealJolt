@@ -46,10 +46,6 @@ public:
 	// Can't have a motion type setter here. If a body is statically added, MotionProperties does not get created.
 	// We could set mAllowDynamicOrKinematic to true to get around this.
 
-	/** Indicates which degrees of freedom this body has. Can be used to limit simulation to 2D. */
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Jolt Physics|Motion", meta = (Bitmask, BitmaskEnum = "/Script/UnrealJolt.EJoltAllowedDOFs"))
-	int32 AllowedDOFs = 0b111111;
-
 	/** Jolt object layer this body is placed on, used for collision filtering. "Default" resolves to the project's default layer for the selected MotionType. */
 	UPROPERTY(EditAnywhere, Category = "Jolt Physics|Motion", meta = (GetOptions = "GetObjectLayerNames"))
 	FName Layer = FName("Default");
@@ -58,11 +54,17 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Jolt Physics|Motion", meta = (DefaultToSelf = "Actor"))
 	static void SetObjectLayer(UPARAM(meta=(RequireActorComponent = "JoltPhysicsComponent")) AActor* Actor, FName NewObjectLayer);
 	
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Jolt Physics|Motion", meta = (InlineEditConditionToggle))
-	bool bOverrideMass = false;
+	/** Indicates which degrees of freedom this body has. Can be used to limit simulation to 2D. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Jolt Physics|Motion", 
+		meta = (Bitmask, BitmaskEnum = "/Script/UnrealJolt.EJoltAllowedDOFs", EditCondition = "MotionType != EJoltMotionType::Static"))
+	int32 AllowedDOFs = 0b111111;
 	
+	/** Overrides the automatically computed mass with a fixed value */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Jolt Physics|Motion", meta = (EditCondition = "MotionType != EJoltMotionType::Static"))
+	bool bOverrideMass = false;
+
 	/** Mass of the body in KG. When bOverrideMass is off, this is computed based on physical material and collision geometry. */
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Jolt Physics|Motion", meta = (EditCondition = "bOverrideMass", UIMin = "0.001", Units = "Kilograms"))
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Jolt Physics|Motion", meta = (EditCondition = "bOverrideMass && MotionType != EJoltMotionType::Static", UIMin = "0.001", Units = "Kilograms"))
 	float Mass = 100.0f;
 	
 	/** Sets the mass of the body in KG. */
@@ -70,7 +72,8 @@ public:
 	static void SetMass(UPARAM(meta=(RequireActorComponent = "JoltPhysicsComponent")) AActor* Actor, float NewMass);
 	
 	/** Value to multiply gravity with for this body. */
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Jolt Physics|Forces")
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Jolt Physics|Forces", 
+		meta = (EditCondition = "MotionType != EJoltMotionType::Static"))
 	float GravityFactor = 1.f;
 
 	/** Sets the gravity factor for this body. */
@@ -78,7 +81,8 @@ public:
 	static void SetGravityFactor(UPARAM(meta=(RequireActorComponent = "JoltPhysicsComponent")) AActor* Actor, float NewGravityFactor);
 	
 	/** Simulates gyroscopic torque so spinning bodies resist changes to their spin axis. */
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Jolt Physics|Forces")
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Jolt Physics|Forces", 
+		meta = (EditCondition = "MotionType != EJoltMotionType::Static"))
 	bool bApplyGyroscopicForce = false;
 	
 	/** Sets whether gyroscopic torque is simulated for this body. */
@@ -86,7 +90,8 @@ public:
 	static void SetApplyGyroscopicForce(UPARAM(meta=(RequireActorComponent = "JoltPhysicsComponent")) AActor* Actor, bool bNewApplyGyroscopicForce);
 	
 	/** Maximum linear velocity that this body can reach (m/s) */
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Jolt Physics|Motion", meta = (Units = "m/s"))
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Jolt Physics|Motion", 
+		meta = (Units = "m/s", EditCondition = "MotionType != EJoltMotionType::Static"))
 	float MaxLinearVelocity = 500.f;
 	
 	/** Sets the maximum linear velocity this body can reach (m/s). */
@@ -94,7 +99,8 @@ public:
 	static void SetMaxLinearVelocity(UPARAM(meta=(RequireActorComponent = "JoltPhysicsComponent")) AActor* Actor, float NewMaxLinearVelocity);
 	
 	/** Maximum angular velocity that this body can reach (rad/s). */
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Jolt Physics|Motion", meta = (Units = "rad/s"))
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Jolt Physics|Motion", 
+		meta = (Units = "rad/s", EditCondition = "MotionType != EJoltMotionType::Static"))
 	float MaxAngularVelocity = 0.25f * PI * 60.0f;
 	
 	/** Sets the maximum angular velocity this body can reach (rad/s). */
@@ -118,7 +124,8 @@ public:
 	static void SetRestitution(UPARAM(meta=(RequireActorComponent = "JoltPhysicsComponent")) AActor* Actor, float NewRestitution);
 	
 	/** Drag force added to reduce linear movement, applies dv/dt = -c * v. */
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Jolt Physics|Damping")
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Jolt Physics|Damping", 
+		meta = (EditCondition = "MotionType != EJoltMotionType::Static"))
 	float LinearDamping = 0.05f;
 
 	/** Sets the linear damping applied to this body. */
@@ -126,7 +133,8 @@ public:
 	static void SetLinearDamping(UPARAM(meta=(RequireActorComponent = "JoltPhysicsComponent")) AActor* Actor, float NewLinearDamping);
 
 	/** Drag force added to reduce angular movement, applies dw/dt = -c * w. */
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Jolt Physics|Damping")
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Jolt Physics|Damping", 
+		meta = (EditCondition = "MotionType != EJoltMotionType::Static"))
 	float AngularDamping = 0.05f;
 
 	/** Sets the angular damping applied to this body. */
@@ -134,7 +142,8 @@ public:
 	static void SetAngularDamping(UPARAM(meta=(RequireActorComponent = "JoltPhysicsComponent")) AActor* Actor, float NewAngularDamping);
 	
 	/** Whether this body can go to sleep. */
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Jolt Physics", AdvancedDisplay)
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Jolt Physics|Advanced", 
+		meta = (EditCondition = "MotionType != EJoltMotionType::Static"))
 	bool bAllowSleeping = true;
 
 	/** Sets whether this body is allowed to go to sleep. */
@@ -142,7 +151,8 @@ public:
 	static void SetAllowSleeping(UPARAM(meta=(RequireActorComponent = "JoltPhysicsComponent")) AActor* Actor, bool bNewAllowSleeping);
 	
 	/** Overrides the number of solver velocity iterations, 0 uses the project default */
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Jolt Physics", AdvancedDisplay)
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Jolt Physics|Advanced", 
+		meta = (EditCondition = "MotionType != EJoltMotionType::Static"))
 	int NumVelocityStepsOverride = 0;
 
 	/** Sets the solver velocity iteration override for this body, 0 uses the project default. */
@@ -150,7 +160,8 @@ public:
 	static void SetNumVelocityStepsOverride(UPARAM(meta=(RequireActorComponent = "JoltPhysicsComponent")) AActor* Actor, int NewNumVelocityStepsOverride);
 
 	/** Overrides the number of solver position iterations, 0 uses the project default */
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Jolt Physics", AdvancedDisplay)
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Jolt Physics|Advanced", 
+		meta = (EditCondition = "MotionType != EJoltMotionType::Static"))
 	int NumPositionStepsOverride = 0;
 
 	/** Sets the solver position iteration override for this body, 0 uses the project default. */
@@ -158,7 +169,7 @@ public:
 	static void SetNumPositionStepsOverride(UPARAM(meta=(RequireActorComponent = "JoltPhysicsComponent")) AActor* Actor, int NewNumPositionStepsOverride);
 
 	/** Makes extra effort to remove ghost collisions on internal mesh edges, at a performance cost */
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Jolt Physics", AdvancedDisplay)
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Jolt Physics|Advanced")
 	bool bEnhancedInternalEdgeRemoval = false;
 
 	/** Sets whether extra effort is made to remove ghost collisions on internal mesh edges. */
