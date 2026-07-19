@@ -1,6 +1,7 @@
 // Fill out your copyright notice in the Description page of Project Settings.
 
 #include "JoltDataAsset.h"
+#include "JoltPhysicsMaterial.h"
 #include "JoltSettings.h"
 #include "UnrealJolt/Helpers.h"
 
@@ -37,6 +38,24 @@ void UJoltDataAsset::GetJoltShapeBinaryData(const JPH::Body* inBody, FJoltShapeD
 	outShapeBinary.Friction = inBody->GetFriction();
 	outShapeBinary.Restitution = inBody->GetRestitution();
 	outShapeBinary.WorldTransform = JoltHelpers::ToUETransform(inBody->GetWorldTransform());
+
+	// Save material data
+	JPH::PhysicsMaterialList materialList;
+	inBody->GetShape()->SaveMaterialState(materialList);
+	outShapeBinary.Materials.Empty(materialList.size());
+	for (const JPH::PhysicsMaterialRefC& material : materialList)
+	{
+		// Every non-null material on cooked bodies is a JoltPhysicsMaterial (see UJoltSubsystem::GetJoltPhysicsMaterial)
+		const JoltPhysicsMaterial* joltMaterial = static_cast<const JoltPhysicsMaterial*>(material.GetPtr());
+		FJoltShapeMaterialData materialData;
+		if (joltMaterial != nullptr)
+		{
+			materialData.SurfaceType = static_cast<uint8>(joltMaterial->SurfaceType);
+			materialData.Friction = joltMaterial->Friction;
+			materialData.Restitution = joltMaterial->Restitution;
+		}
+		outShapeBinary.Materials.Add(materialData);
+	}
 }
 
 void UJoltDataAsset::LoadBodies(const TArray<JPH::Body*> allBodies)

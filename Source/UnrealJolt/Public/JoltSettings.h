@@ -139,6 +139,12 @@ public:
 	 */
 	UPROPERTY(Config, EditAnywhere, Category = Settings)
 	int TickRate;
+	
+	/*
+	 * Default gravity in Unreal units. Can be overridden by SetGravity. 
+	 */
+	UPROPERTY(Config, EditAnywhere, Category = Settings)
+	FVector DefaultGravity = FVector(0.f, 0.f, -980.f);
 
 	/*
 	 * We need a temp allocator for temporary allocations during the physics update. We're
