@@ -409,7 +409,7 @@ void UJoltSubsystem::InitPhysicsSystem(
 int64 UJoltSubsystem::AddDynamicBody(AActor* body, const float& friction, const float& restitution, const float& mass, FName Layer)
 {
 
-	int64 ID = 0;
+	int64 ID = JPH::BodyID::cInvalidBodyID;
 	ExtractPhysicsGeometry(body, [body, this, friction, restitution, mass, Layer, &ID](const JPH::Shape* shape, const FTransform& RelTransform) {
 		// Every sub-collider in the actor is passed to this callback function
 		// We're baking this in world space, so apply actor transform to relative
@@ -426,7 +426,7 @@ int64 UJoltSubsystem::AddDynamicBody(AActor* body, const float& friction, const 
 
 int64 UJoltSubsystem::AddStaticBody(const AActor* Body, const float& Friction, const float& Restitution, FName Layer)
 {
-	int64 ID = 0;
+	int64 ID = JPH::BodyID::cInvalidBodyID;
 	ExtractPhysicsGeometry(Body, [Body, this, Friction, Restitution, Layer, &ID](const JPH::Shape* Shape, const FTransform& RelTransform) mutable {
 		// Every sub-collider in the actor is passed to this callback function
 		// We're baking this in world space, so apply actor transform to relative

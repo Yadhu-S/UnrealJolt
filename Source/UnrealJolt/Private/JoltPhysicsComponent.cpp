@@ -8,7 +8,7 @@
 if (!Actor) return; \
 UJoltPhysicsComponent* Component = Actor->GetComponentByClass<UJoltPhysicsComponent>(); \
 if (!Component) return; \
-if (Component->BodyID == -1) return; \
+if (Component->BodyID == JPH::BodyID::cInvalidBodyID) return; \
 JPH::BodyID BodyID = JPH::BodyID(Component->BodyID); \
 UJoltSubsystem* Subsystem = GetJoltSubsystem(Actor); \
 if (!Subsystem) return;
@@ -59,6 +59,8 @@ void UJoltPhysicsComponent::BeginPlay()
 		BodyID = MotionType == EJoltMotionType::Static ?
 		   JoltSubsystem->AddStaticBody(GetOwner(), Friction, Restitution, ResolvedLayer) :
 		   JoltSubsystem->AddDynamicBody(GetOwner(), Friction, Restitution, Mass, ResolvedLayer);
+		
+		if (BodyID == JPH::BodyID::cInvalidBodyID) return;
 		
 		// Not a massive fan of this, I feel like it would be more appropriate to pass it through AddStatic/DynamicBody.
 		// Maybe pass a struct through them instead of a billion parameters - but that would be a decently sized change. 
@@ -205,7 +207,7 @@ void UJoltPhysicsComponent::SetEnhancedInternalEdgeRemoval(AActor* Actor, bool b
 
 bool UJoltPhysicsComponent::GetBodyID(int& OutBodyID) const
 {
-	if (BodyID == -1) return false;
+	if (BodyID == JPH::BodyID::cInvalidBodyID) return false;
 	OutBodyID = BodyID;
 	return true;
 }
