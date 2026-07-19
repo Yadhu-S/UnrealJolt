@@ -1,8 +1,5 @@
 #include "UnrealJoltEditor.h"
-
-#include "BlueprintCompilationManager.h"
 #include "JoltMotionTypeCustomization.h"
-#include "JoltPhysicsBlueprintCompilerExtension.h"
 #include "JoltPhysicsDetailsCustomization.h"
 #include "JoltSettings.h"
 #include "JoltSettingsDetails.h"
@@ -32,11 +29,6 @@ void FUnrealJoltEditorModule::StartupModule()
 	PhysicsSection->AddCategory("Jolt Physics");
 	
 	PropertyModule.NotifyCustomizationModuleChanged();
-	
-	CompilerExtension = NewObject<UJoltPhysicsBlueprintCompilerExtension>();
-	CompilerExtension->AddToRoot();
-	
-	FBlueprintCompilationManager::RegisterCompilerExtension(UBlueprint::StaticClass(), CompilerExtension.Get());
 }
 
 void FUnrealJoltEditorModule::ShutdownModule()
@@ -53,12 +45,6 @@ void FUnrealJoltEditorModule::ShutdownModule()
 		PhysicsSection->RemoveCategory("Jolt Physics");
 
 		PropertyModule.NotifyCustomizationModuleChanged();
-	}
-
-	if (UJoltPhysicsBlueprintCompilerExtension* CompilerExtensionPtr = CompilerExtension.Get())
-	{
-		CompilerExtensionPtr->RemoveFromRoot();
-		CompilerExtensionPtr = nullptr;
 	}
 }
 
