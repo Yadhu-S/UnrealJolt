@@ -10,5 +10,6 @@ public:
 	virtual void StartupModule() override;
 	virtual void ShutdownModule() override;
 	
-	UJoltPhysicsBlueprintCompilerExtension* CompilerExtension;
+private:
+	TWeakObjectPtr<UJoltPhysicsBlueprintCompilerExtension> CompilerExtension = nullptr;
 };

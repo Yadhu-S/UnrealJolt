@@ -14,74 +14,66 @@ void FJoltPhysicsDetailsCustomization::CustomizeDetails(IDetailLayoutBuilder& De
 {
 	TArray<TWeakObjectPtr<UObject>> Objects;
 	DetailBuilder.GetObjectsBeingCustomized(Objects);
-
-	if (Objects.Num() != 1) return;
-
-	const UPrimitiveComponent* PrimitiveComponent = Cast<UPrimitiveComponent>(Objects[0].Get());
-	if (!PrimitiveComponent) return;
-
-	const AActor* Owner = PrimitiveComponent->GetOwner();
+	
+	if (Objects.IsEmpty()) return;
+	
+	const AActor* Owner = Cast<AActor>(Objects[0].Get());
 	if (!Owner) return;
-
+	
 	UJoltPhysicsComponent* JoltComponent = Owner->FindComponentByClass<UJoltPhysicsComponent>();
 	if (!JoltComponent) return;
-
+	
 	DetailBuilder.HideCategory(FName("Physics"));
 
-	IDetailCategoryBuilder& JoltCategory = DetailBuilder.EditCategory("Jolt Physics");
+    // If a UPROPERTY on the class points at this component, the engine already flattens and nests its properties correctly, so nothing further is needed
+    bool bIsNativeProperty = false;
+    for (TFieldIterator<FObjectProperty> PropertyIt(Owner->GetClass()); PropertyIt; ++PropertyIt)
+    {
+       FObjectProperty* ObjectProperty = *PropertyIt;
+       if (!ObjectProperty->PropertyClass->IsChildOf(UJoltPhysicsComponent::StaticClass())) continue;
+       if (ObjectProperty->GetObjectPropertyValue(ObjectProperty->ContainerPtrToValuePtr<void>(Owner)) != JoltComponent) continue;
+       bIsNativeProperty = true;
+       break;
+    }
 
-	// Put it under materials, just like the original physics category
-	const int32 MaterialsSortOrder = DetailBuilder.EditCategory("Materials").GetSortOrder();
-	JoltCategory.SetSortOrder(MaterialsSortOrder + 1);
-
-	TArray<UObject*> JoltObjects;
-	JoltObjects.Add(JoltComponent);
-
-	// Adds each named property as a row inside a named subgroup of the Jolt Physics category
-	auto AddGroup = [&](const FName& GroupName, const TArray<FName>& PropertyNames)
-	{
-		IDetailGroup& Group = JoltCategory.AddGroup(GroupName, FText::FromName(GroupName));
-
-		for (const FName& PropertyName : PropertyNames)
-		{
-			TSharedPtr<IPropertyHandle> Handle = DetailBuilder.AddObjectPropertyData(JoltObjects, PropertyName);
-			if (Handle.IsValid())
-			{
-				Group.AddPropertyRow(Handle.ToSharedRef());
-			}
-		}
-	};
-
-	// I don't foresee new properties to be added constantly, so - even though it's a little
-	// unwieldy - this should be fine.
-	AddGroup(FName("Motion"), { 
-		GET_MEMBER_NAME_CHECKED(UJoltPhysicsComponent, MotionType), 
-		GET_MEMBER_NAME_CHECKED(UJoltPhysicsComponent, AllowedDOFs), 
-		GET_MEMBER_NAME_CHECKED(UJoltPhysicsComponent, Layer), 
-		GET_MEMBER_NAME_CHECKED(UJoltPhysicsComponent, Mass) 
-		});
+    if (!bIsNativeProperty)
+    {
+    	// Instance added component, no UPROPERTY backs it, so nothing auto flattens and we have to build the rows ourselves
+    	TArray<UObject*> JoltObjects = { JoltComponent };
+    	TMap<FName, IDetailGroup*> Groups;
+    	
+    	for (TFieldIterator<FProperty> PropertyIt(UJoltPhysicsComponent::StaticClass()); PropertyIt; ++PropertyIt)
+    	{
+    		FProperty* Property = *PropertyIt;
+    		if (!Property->HasAnyPropertyFlags(CPF_Edit)) continue;
+    		
+    		const FString FullCategory = Property->GetMetaData(TEXT("Category"));
+    		if (FullCategory.IsEmpty()) continue;
+    		
+    		// We have to handle subgroups (e.g. Jolt Physics|Motion) ourselves
+    		FString TopCategory = FullCategory;
+    		FString SubGroup;
+    		FullCategory.Split(TEXT("|"), &TopCategory, &SubGroup);
+    		
+    		TSharedPtr<IPropertyHandle> Handle = DetailBuilder.AddObjectPropertyData(JoltObjects, Property->GetFName());
+    		if (!Handle.IsValid()) continue;
+    		
+    		IDetailCategoryBuilder& CategoryBuilder = DetailBuilder.EditCategory(FName(*TopCategory));
+    		
+    		if (SubGroup.IsEmpty())
+    		{
+    			CategoryBuilder.AddProperty(Handle.ToSharedRef());
+    			continue;
+    		}
+    		
+    		const FName GroupName(*SubGroup);
+    		IDetailGroup*& Group = Groups.FindOrAdd(GroupName);
+    		if (!Group) Group = &CategoryBuilder.AddGroup(GroupName, FText::FromName(GroupName));
+    		Group->AddPropertyRow(Handle.ToSharedRef());
+    	}
+    }
 	
-	AddGroup(FName("Forces"), { 
-		GET_MEMBER_NAME_CHECKED(UJoltPhysicsComponent, GravityFactor), 
-		GET_MEMBER_NAME_CHECKED(UJoltPhysicsComponent, bApplyGyroscopicForce), 
-		GET_MEMBER_NAME_CHECKED(UJoltPhysicsComponent, MaxLinearVelocity), 
-		GET_MEMBER_NAME_CHECKED(UJoltPhysicsComponent, MaxAngularVelocity) 
-	});
-	
-	AddGroup(FName("Surface"), { 
-		GET_MEMBER_NAME_CHECKED(UJoltPhysicsComponent, Friction), 
-		GET_MEMBER_NAME_CHECKED(UJoltPhysicsComponent, Restitution) 
-	});
-	
-	AddGroup(FName("Damping"), { 
-		GET_MEMBER_NAME_CHECKED(UJoltPhysicsComponent, LinearDamping), 
-		GET_MEMBER_NAME_CHECKED(UJoltPhysicsComponent, AngularDamping) 
-	});
-	
-	AddGroup(FName("Advanced"), { 
-		GET_MEMBER_NAME_CHECKED(UJoltPhysicsComponent, bAllowSleeping), 
-		GET_MEMBER_NAME_CHECKED(UJoltPhysicsComponent, NumVelocityStepsOverride), 
-		GET_MEMBER_NAME_CHECKED(UJoltPhysicsComponent, NumPositionStepsOverride), 
-		GET_MEMBER_NAME_CHECKED(UJoltPhysicsComponent, bEnhancedInternalEdgeRemoval) 
-	});
+    // Put it under materials, just like the original physics category
+    const int32 MaterialsSortOrder = DetailBuilder.EditCategory("Materials").GetSortOrder();
+    DetailBuilder.EditCategory("Jolt Physics").SetSortOrder(MaterialsSortOrder + 1);
 }

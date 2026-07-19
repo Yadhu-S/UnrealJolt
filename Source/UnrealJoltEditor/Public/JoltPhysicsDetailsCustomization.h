@@ -3,7 +3,7 @@
 #include "CoreMinimal.h"
 #include "IDetailCustomization.h"
 
-/** Hide the default physics category, and replaces them with Jolt Physics' properties to declutter static mesh components */
+/** Hides the default Physics category and mirrors Jolt Physics properties in its place on actors with a Jolt Physics component */
 class FJoltPhysicsDetailsCustomization : public IDetailCustomization
 {
 public:

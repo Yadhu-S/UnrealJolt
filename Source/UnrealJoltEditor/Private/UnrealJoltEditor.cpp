@@ -3,7 +3,6 @@
 #include "BlueprintCompilationManager.h"
 #include "JoltMotionTypeCustomization.h"
 #include "JoltPhysicsBlueprintCompilerExtension.h"
-#include "JoltPhysicsComponent.h"
 #include "JoltPhysicsDetailsCustomization.h"
 #include "JoltSettings.h"
 #include "JoltSettingsDetails.h"
@@ -25,18 +24,19 @@ void FUnrealJoltEditorModule::StartupModule()
 		FOnGetPropertyTypeCustomizationInstance::CreateStatic(&FJoltMotionTypeCustomization::MakeInstance));
 
 	PropertyModule.RegisterCustomClassLayout(
-		UStaticMeshComponent::StaticClass()->GetFName(),
+		AActor::StaticClass()->GetFName(),
 		FOnGetDetailCustomizationInstance::CreateStatic(&FJoltPhysicsDetailsCustomization::MakeInstance));
 	
 	TSharedRef<FPropertySection> PhysicsSection = PropertyModule.FindOrCreateSection(
-		UStaticMeshComponent::StaticClass()->GetFName(), "Physics", LOCTEXT("Physics", "Physics"));
+		AActor::StaticClass()->GetFName(), "Physics", LOCTEXT("Physics", "Physics"));
 	PhysicsSection->AddCategory("Jolt Physics");
 	
 	PropertyModule.NotifyCustomizationModuleChanged();
 	
-	CompilerExtension = NewObject<UJoltPhysicsBlueprintCompilerExtension>(GetTransientPackage(), NAME_None, RF_Standalone);
+	CompilerExtension = NewObject<UJoltPhysicsBlueprintCompilerExtension>();
 	CompilerExtension->AddToRoot();
-	FBlueprintCompilationManager::RegisterCompilerExtension(UBlueprint::StaticClass(), CompilerExtension);
+	
+	FBlueprintCompilationManager::RegisterCompilerExtension(UBlueprint::StaticClass(), CompilerExtension.Get());
 }
 
 void FUnrealJoltEditorModule::ShutdownModule()
@@ -46,17 +46,20 @@ void FUnrealJoltEditorModule::ShutdownModule()
 		FPropertyEditorModule& PropertyModule = FModuleManager::GetModuleChecked<FPropertyEditorModule>("PropertyEditor");
 		PropertyModule.UnregisterCustomClassLayout(UJoltSettings::StaticClass()->GetFName());
 		PropertyModule.UnregisterCustomPropertyTypeLayout(TEXT("EJoltMotionType"));
-		PropertyModule.UnregisterCustomClassLayout(UStaticMeshComponent::StaticClass()->GetFName());
-		
+		PropertyModule.UnregisterCustomClassLayout(AActor::StaticClass()->GetFName());
+
+		TSharedRef<FPropertySection> PhysicsSection = PropertyModule.FindOrCreateSection(
+			UStaticMeshComponent::StaticClass()->GetFName(), "Physics", LOCTEXT("Physics", "Physics"));
+		PhysicsSection->RemoveCategory("Jolt Physics");
+
 		PropertyModule.NotifyCustomizationModuleChanged();
 	}
-	
-	if (CompilerExtension && UObjectInitialized())
-	{
-		CompilerExtension->RemoveFromRoot();
-	}
 
-	CompilerExtension = nullptr;
+	if (UJoltPhysicsBlueprintCompilerExtension* CompilerExtensionPtr = CompilerExtension.Get())
+	{
+		CompilerExtensionPtr->RemoveFromRoot();
+		CompilerExtensionPtr = nullptr;
+	}
 }
 
 #undef LOCTEXT_NAMESPACE
