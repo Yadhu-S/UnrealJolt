@@ -6,20 +6,19 @@
 DEFINE_LOG_CATEGORY(LogJoltPhysicsComponent);
 
 /** Gets the Jolt physics component and subsystem for an actor, validates BodyID, returns early if any are invalid. */
-#define JOLT_GET_COMPONENT_AND_SUBSYSTEM() \
+#define JOLT_GET_COMPONENT_AND_SUBSYSTEM(ReturnValue) \
 if (!Actor) { UE_LOG(LogJoltPhysicsComponent, Error, \
-TEXT("%hs: Actor not found for %s") \
-, __FUNCTION__, *Actor->GetName()); return; } \
+TEXT("%hs: Actor not found"), __FUNCTION__); return ReturnValue; } \
 UJoltPhysicsComponent* Component = Actor->GetComponentByClass<UJoltPhysicsComponent>(); \
 if (!Component) { UE_LOG(LogJoltPhysicsComponent, Error, \
 TEXT("%hs: Component not found on %s - Jolt Physics setters can only be called on actors with a Jolt Physics Component") \
-, __FUNCTION__, *Actor->GetName()); return; } \
-if (Component->BodyID == JPH::BodyID::cInvalidBodyID) return; \
+, __FUNCTION__, *Actor->GetName()); return ReturnValue; } \
+if (Component->BodyID == JPH::BodyID::cInvalidBodyID) return ReturnValue; \
 JPH::BodyID BodyID = JPH::BodyID(Component->BodyID); \
 UJoltSubsystem* Subsystem = GetJoltSubsystem(Actor); \
 if (!Subsystem) { UE_LOG(LogJoltPhysicsComponent, Error, \
 TEXT("%hs: Subsystem not found for %s") \
-, __FUNCTION__, *Actor->GetName()); return; }
+, __FUNCTION__, *Actor->GetName()); return ReturnValue; }
 
 namespace
 {
@@ -38,22 +37,57 @@ void UJoltPhysicsComponent::BeginPlay()
     
 	if (!GetOwner()) return;
 
-	TArray<USceneComponent*> SceneComponents;
-	GetOwner()->GetComponents<USceneComponent>(SceneComponents);
+	TArray<UStaticMeshComponent*> StaticMeshComponents;
+	GetOwner()->GetComponents<UStaticMeshComponent>(StaticMeshComponents);
 
-	for (USceneComponent* SceneComponent : SceneComponents)
+	bool bFoundValidGeometry = false;
+	
+	for (UStaticMeshComponent* StaticMeshComponent : StaticMeshComponents)
 	{
-		if (!SceneComponent) continue;
+		if (!StaticMeshComponent) continue;
+		
+		if (!StaticMeshComponent->GetStaticMesh())
+		{
+			UE_LOG(LogJoltPhysicsComponent, Warning,
+				TEXT("%hs: Static mesh component %s has no valid static mesh"), 
+				__FUNCTION__, *StaticMeshComponent->GetName());
+			continue;
+		}
 		
 		// Dynamic bodies have to be movable, static bodies can be either.
 		if (MotionType == EJoltMotionType::Dynamic)
-			SceneComponent->SetMobility(EComponentMobility::Movable);
+		{
+			if (StaticMeshComponent->GetMobility() != EComponentMobility::Movable)
+			{
+				UE_LOG(LogJoltPhysicsComponent, Warning,
+					TEXT("%hs: Component mobility for %s is movable, when %s's Jolt Physics Component is set to dynamic motion type, setting mobility to movable"), 
+					__FUNCTION__, *StaticMeshComponent->GetName(), *GetOwner()->GetName());
+				StaticMeshComponent->SetMobility(EComponentMobility::Movable);
+			}
+		}
 
-		// This is also set in ExtractPhysicsGeometry, but I felt it was good practice to set it here too. 
-		if (UPrimitiveComponent* PrimitiveComponent = Cast<UPrimitiveComponent>(SceneComponent))
-			PrimitiveComponent->SetSimulatePhysics(false);
+		// Bodies need to have simulate physics turned off. 
+		if (UPrimitiveComponent* PrimitiveComponent = Cast<UPrimitiveComponent>(StaticMeshComponent))
+		{
+			if (PrimitiveComponent->IsSimulatingPhysics())
+			{
+				UE_LOG(LogJoltPhysicsComponent, Warning,
+					TEXT("%hs: 'Simulate physics' turned on for component %s, disabling chaos"), 
+					__FUNCTION__, *PrimitiveComponent->GetName());
+				PrimitiveComponent->SetSimulatePhysics(false);
+			}
+		}
+		
+		bFoundValidGeometry = true;
 	}
-    
+	
+	if (!bFoundValidGeometry)
+	{
+		UE_LOG(LogJoltPhysicsComponent, Error,
+			TEXT("%hs: %s has no valid geometry to simulate via Jolt Physics"), __FUNCTION__, *GetOwner()->GetName());
+		return;
+	}
+		
 	if (UJoltSubsystem* JoltSubsystem = GetJoltSubsystem(GetOwner()))
 	{
 		const FName ResolvedLayer = ResolveLayer();
@@ -148,6 +182,13 @@ void UJoltPhysicsComponent::SetMaxLinearVelocity(AActor* Actor, float NewMaxLine
 	
 	Component->MaxLinearVelocity = NewMaxLinearVelocity;
 	Subsystem->JoltSetMaxLinearVelocity(BodyID, NewMaxLinearVelocity);
+}
+
+float UJoltPhysicsComponent::GetMaxLinearVelocity(AActor* Actor)
+{
+	JOLT_GET_COMPONENT_AND_SUBSYSTEM(-1)
+
+	return Subsystem->JoltGetMaxLinearVelocity(BodyID);
 }
 
 void UJoltPhysicsComponent::SetMaxAngularVelocity(AActor* Actor, float NewMaxAngularVelocity)

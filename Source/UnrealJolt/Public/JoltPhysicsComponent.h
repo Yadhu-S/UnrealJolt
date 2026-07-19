@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "Components/ActorComponent.h"
+#include "UnrealJolt/Helpers.h"
 #include "JoltPhysicsComponent.generated.h"
 
 DECLARE_LOG_CATEGORY_EXTERN(LogJoltPhysicsComponent, Log, All);
@@ -91,14 +92,18 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Jolt Physics|Forces", meta = (DefaultToSelf = "Actor"))
 	static void SetApplyGyroscopicForce(AActor* Actor, bool bNewApplyGyroscopicForce);
 	
-	/** Maximum linear velocity that this body can reach (m/s) */
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Jolt Physics|Motion", 
+	/** Maximum linear velocity that this body can reach (cm/s) */
+	UPROPERTY(EditAnywhere, Category = "Jolt Physics|Motion", 
 		meta = (Units = "m/s", EditCondition = "MotionType != EJoltMotionType::Static"))
-	float MaxLinearVelocity = 500.f;
+	float MaxLinearVelocity = 500.f * JOLT_TO_WORLD_SCALE;
 	
-	/** Sets the maximum linear velocity this body can reach (m/s). */
+	/** Sets the maximum linear velocity this body can reach (cm/s). */
 	UFUNCTION(BlueprintCallable, Category = "Jolt Physics|Motion", meta = (DefaultToSelf = "Actor"))
 	static void SetMaxLinearVelocity(AActor* Actor, float NewMaxLinearVelocity);
+	
+	/** Gets the maximum linear velocity this body can reach (cm/s). */
+	UFUNCTION(BlueprintCallable, Category = "Jolt Physics|Motion", meta = (DefaultToSelf = "Actor"))
+	static float GetMaxLinearVelocity(AActor* Actor);
 	
 	/** Maximum angular velocity that this body can reach (rad/s). */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Jolt Physics|Motion", 

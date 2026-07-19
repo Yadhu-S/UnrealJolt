@@ -226,6 +226,9 @@ public:
 	void JoltSetMaxLinearVelocity(const int64& bodyID, float maxLinearVelocity) const;
 	
 	UFUNCTION(BlueprintCallable, Category = "Jolt Physics", BlueprintPure = false)
+	float JoltGetMaxLinearVelocity(const int64& bodyID) const;
+	
+	UFUNCTION(BlueprintCallable, Category = "Jolt Physics", BlueprintPure = false)
 	void JoltSetMaxAngularVelocity(const int64& bodyID, float maxAngularVelocity) const;
 	
 	UFUNCTION(BlueprintCallable, Category = "Jolt Physics", BlueprintPure = false)
@@ -305,6 +308,8 @@ public:
 	void JoltSetApplyGyroscopicForce(const JPH::BodyID& bodyID, bool bApplyGyroscopicForce) const;
 	
 	void JoltSetMaxLinearVelocity(const JPH::BodyID& bodyID, float maxLinearVelocity) const;
+	
+	float JoltGetMaxLinearVelocity(const JPH::BodyID& bodyID) const;
 	
 	void JoltSetMaxAngularVelocity(const JPH::BodyID& bodyID, float maxAngularVelocity) const;
 	

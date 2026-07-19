@@ -1519,6 +1519,11 @@ void UJoltSubsystem::JoltSetMaxLinearVelocity(const int64& bodyID, float maxLine
 	JoltSetMaxLinearVelocity(JPH::BodyID(bodyID), maxLinearVelocity);
 }
 
+float UJoltSubsystem::JoltGetMaxLinearVelocity(const int64& bodyID) const
+{
+	return JoltGetMaxLinearVelocity(JPH::BodyID(bodyID));
+}
+
 void UJoltSubsystem::JoltSetMaxAngularVelocity(const int64& bodyID, float maxAngularVelocity) const
 {
 	JoltSetMaxAngularVelocity(JPH::BodyID(bodyID), maxAngularVelocity);
@@ -1628,7 +1633,12 @@ void UJoltSubsystem::JoltSetApplyGyroscopicForce(const JPH::BodyID& bodyID, bool
 
 void UJoltSubsystem::JoltSetMaxLinearVelocity(const JPH::BodyID& bodyID, float maxLinearVelocity) const
 {
-	GetBodyInterface()->SetMaxLinearVelocity(bodyID, maxLinearVelocity);
+	GetBodyInterface()->SetMaxLinearVelocity(bodyID, JoltHelpers::ToJoltSize(maxLinearVelocity));
+}
+
+float UJoltSubsystem::JoltGetMaxLinearVelocity(const JPH::BodyID& bodyID) const
+{
+	return JoltHelpers::ToUESize(GetBodyInterface()->GetMaxLinearVelocity(bodyID));
 }
 
 void UJoltSubsystem::JoltSetMaxAngularVelocity(const JPH::BodyID& bodyID, float maxAngularVelocity) const
