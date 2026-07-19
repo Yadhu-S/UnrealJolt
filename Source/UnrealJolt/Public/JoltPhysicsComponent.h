@@ -56,7 +56,7 @@ public:
 	
 	/** Sets a body's object layer for collision filtering. */
 	UFUNCTION(BlueprintCallable, Category = "Jolt Physics|Motion", meta = (DefaultToSelf = "Actor"))
-	static void SetObjectLayer(UPARAM(meta=(RequireActorComponent = "JoltPhysicsComponent")) AActor* Actor, FName NewObjectLayer);
+	static void SetObjectLayer(AActor* Actor, FName NewObjectLayer);
 	
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Jolt Physics|Motion", meta = (InlineEditConditionToggle))
 	bool bOverrideMass = false;
@@ -67,7 +67,7 @@ public:
 	
 	/** Sets the mass of the body in KG. */
 	UFUNCTION(BlueprintCallable, Category = "Jolt Physics|Motion", meta = (DefaultToSelf = "Actor"))
-	static void SetMass(UPARAM(meta=(RequireActorComponent = "JoltPhysicsComponent")) AActor* Actor, float NewMass);
+	static void SetMass(AActor* Actor, float NewMass);
 	
 	/** Value to multiply gravity with for this body. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Jolt Physics|Forces")
@@ -75,7 +75,7 @@ public:
 
 	/** Sets the gravity factor for this body. */
 	UFUNCTION(BlueprintCallable, Category = "Jolt Physics|Forces", meta = (DefaultToSelf = "Actor"))
-	static void SetGravityFactor(UPARAM(meta=(RequireActorComponent = "JoltPhysicsComponent")) AActor* Actor, float NewGravityFactor);
+	static void SetGravityFactor(AActor* Actor, float NewGravityFactor);
 	
 	/** Simulates gyroscopic torque so spinning bodies resist changes to their spin axis. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Jolt Physics|Forces")
@@ -83,7 +83,7 @@ public:
 	
 	/** Sets whether gyroscopic torque is simulated for this body. */
 	UFUNCTION(BlueprintCallable, Category = "Jolt Physics|Forces", meta = (DefaultToSelf = "Actor"))
-	static void SetApplyGyroscopicForce(UPARAM(meta=(RequireActorComponent = "JoltPhysicsComponent")) AActor* Actor, bool bNewApplyGyroscopicForce);
+	static void SetApplyGyroscopicForce(AActor* Actor, bool bNewApplyGyroscopicForce);
 	
 	/** Maximum linear velocity that this body can reach (m/s) */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Jolt Physics|Motion", meta = (Units = "m/s"))
@@ -91,7 +91,7 @@ public:
 	
 	/** Sets the maximum linear velocity this body can reach (m/s). */
 	UFUNCTION(BlueprintCallable, Category = "Jolt Physics|Motion", meta = (DefaultToSelf = "Actor"))
-	static void SetMaxLinearVelocity(UPARAM(meta=(RequireActorComponent = "JoltPhysicsComponent")) AActor* Actor, float NewMaxLinearVelocity);
+	static void SetMaxLinearVelocity(AActor* Actor, float NewMaxLinearVelocity);
 	
 	/** Maximum angular velocity that this body can reach (rad/s). */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Jolt Physics|Motion", meta = (Units = "rad/s"))
@@ -99,7 +99,7 @@ public:
 	
 	/** Sets the maximum angular velocity this body can reach (rad/s). */
 	UFUNCTION(BlueprintCallable, Category = "Jolt Physics|Motion", meta = (DefaultToSelf = "Actor"))
-	static void SetMaxAngularVelocity(UPARAM(meta=(RequireActorComponent = "JoltPhysicsComponent")) AActor* Actor, float NewMaxAngularVelocity);
+	static void SetMaxAngularVelocity(AActor* Actor, float NewMaxAngularVelocity);
 	
 	/** Coefficient of friction applied to this body. Higher values resist sliding against other surfaces. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Jolt Physics|Surface")
@@ -107,7 +107,7 @@ public:
 	
 	/** Sets the friction coefficient applied to this body. */
 	UFUNCTION(BlueprintCallable, Category = "Jolt Physics|Surface", meta = (DefaultToSelf = "Actor"))
-	static void SetFriction(UPARAM(meta=(RequireActorComponent = "JoltPhysicsComponent")) AActor* Actor, float NewFriction);
+	static void SetFriction(AActor* Actor, float NewFriction);
 	
 	/** Coefficient of restitution (bounciness). 0 = no bounce, 1 = fully elastic bounce. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Jolt Physics|Surface")
@@ -115,7 +115,7 @@ public:
 	
 	/** Sets the restitution coefficient (bounciness) of this body. */
 	UFUNCTION(BlueprintCallable, Category = "Jolt Physics|Surface", meta = (DefaultToSelf = "Actor"))
-	static void SetRestitution(UPARAM(meta=(RequireActorComponent = "JoltPhysicsComponent")) AActor* Actor, float NewRestitution);
+	static void SetRestitution(AActor* Actor, float NewRestitution);
 	
 	/** Drag force added to reduce linear movement, applies dv/dt = -c * v. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Jolt Physics|Damping")
@@ -123,7 +123,7 @@ public:
 
 	/** Sets the linear damping applied to this body. */
 	UFUNCTION(BlueprintCallable, Category = "Jolt Physics|Damping", meta = (DefaultToSelf = "Actor"))
-	static void SetLinearDamping(UPARAM(meta=(RequireActorComponent = "JoltPhysicsComponent")) AActor* Actor, float NewLinearDamping);
+	static void SetLinearDamping(AActor* Actor, float NewLinearDamping);
 
 	/** Drag force added to reduce angular movement, applies dw/dt = -c * w. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Jolt Physics|Damping")
@@ -131,7 +131,7 @@ public:
 
 	/** Sets the angular damping applied to this body. */
 	UFUNCTION(BlueprintCallable, Category = "Jolt Physics|Damping", meta = (DefaultToSelf = "Actor"))
-	static void SetAngularDamping(UPARAM(meta=(RequireActorComponent = "JoltPhysicsComponent")) AActor* Actor, float NewAngularDamping);
+	static void SetAngularDamping(AActor* Actor, float NewAngularDamping);
 	
 	/** Whether this body can go to sleep. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Jolt Physics", AdvancedDisplay)
@@ -139,7 +139,7 @@ public:
 
 	/** Sets whether this body is allowed to go to sleep. */
 	UFUNCTION(BlueprintCallable, Category = "Jolt Physics|Solver", meta = (DefaultToSelf = "Actor"))
-	static void SetAllowSleeping(UPARAM(meta=(RequireActorComponent = "JoltPhysicsComponent")) AActor* Actor, bool bNewAllowSleeping);
+	static void SetAllowSleeping(AActor* Actor, bool bNewAllowSleeping);
 	
 	/** Overrides the number of solver velocity iterations, 0 uses the project default */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Jolt Physics", AdvancedDisplay)
@@ -147,7 +147,7 @@ public:
 
 	/** Sets the solver velocity iteration override for this body, 0 uses the project default. */
 	UFUNCTION(BlueprintCallable, Category = "Jolt Physics|Solver", meta = (DefaultToSelf = "Actor"))
-	static void SetNumVelocityStepsOverride(UPARAM(meta=(RequireActorComponent = "JoltPhysicsComponent")) AActor* Actor, int NewNumVelocityStepsOverride);
+	static void SetNumVelocityStepsOverride(AActor* Actor, int NewNumVelocityStepsOverride);
 
 	/** Overrides the number of solver position iterations, 0 uses the project default */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Jolt Physics", AdvancedDisplay)
@@ -155,7 +155,7 @@ public:
 
 	/** Sets the solver position iteration override for this body, 0 uses the project default. */
 	UFUNCTION(BlueprintCallable, Category = "Jolt Physics|Solver", meta = (DefaultToSelf = "Actor"))
-	static void SetNumPositionStepsOverride(UPARAM(meta=(RequireActorComponent = "JoltPhysicsComponent")) AActor* Actor, int NewNumPositionStepsOverride);
+	static void SetNumPositionStepsOverride(AActor* Actor, int NewNumPositionStepsOverride);
 
 	/** Makes extra effort to remove ghost collisions on internal mesh edges, at a performance cost */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Jolt Physics", AdvancedDisplay)
@@ -163,7 +163,7 @@ public:
 
 	/** Sets whether extra effort is made to remove ghost collisions on internal mesh edges. */
 	UFUNCTION(BlueprintCallable, Category = "Jolt Physics|Solver", meta = (DefaultToSelf = "Actor"))
-	static void SetEnhancedInternalEdgeRemoval(UPARAM(meta=(RequireActorComponent = "JoltPhysicsComponent")) AActor* Actor, bool bNewEnhancedInternalEdgeRemoval);
+	static void SetEnhancedInternalEdgeRemoval(AActor* Actor, bool bNewEnhancedInternalEdgeRemoval);
 	
 	UFUNCTION(BlueprintPure, Category = "Jolt Physics|Helpers")
 	bool GetBodyID(int& OutBodyID) const;
