@@ -212,6 +212,9 @@ void UJoltSubsystem::AddAllJoltActors(const UWorld* World)
 		AActor* actor = *actorItr;
 		if (!actor)
 			continue;
+		
+		if (actor->FindComponentByClass<UJoltPhysicsComponent>())
+			continue;
 
 		if (actor->ActorHasTag(joltStaticTag))
 		{
