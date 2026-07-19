@@ -11,7 +11,6 @@
 #include "Subsystems/WorldSubsystem.h"
 #include "JoltLayerTable.h"
 #include "JoltFilters.h"
-#include "JoltPhysicsComponent.h"
 #include "Delegates/DelegateCombinations.h"
 #include "Engine/Engine.h"
 #include "UObject/ObjectMacros.h"

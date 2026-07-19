@@ -4,6 +4,8 @@
 #include "Components/ActorComponent.h"
 #include "JoltPhysicsComponent.generated.h"
 
+DECLARE_LOG_CATEGORY_EXTERN(LogJoltPhysicsComponent, Log, All);
+
 UENUM(BlueprintType)
 enum class EJoltMotionType : uint8
 {

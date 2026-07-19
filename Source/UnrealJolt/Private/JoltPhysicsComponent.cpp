@@ -3,15 +3,23 @@
 #include "PhysicsEngine/BodySetup.h"
 #include "UnrealJolt/JoltMain.h"
 
+DEFINE_LOG_CATEGORY(LogJoltPhysicsComponent);
+
 /** Gets the Jolt physics component and subsystem for an actor, validates BodyID, returns early if any are invalid. */
 #define JOLT_GET_COMPONENT_AND_SUBSYSTEM() \
-if (!Actor) return; \
+if (!Actor) { UE_LOG(LogJoltPhysicsComponent, Error, \
+TEXT("%hs: Actor not found for %s") \
+, __FUNCTION__, *Actor->GetName()); return; } \
 UJoltPhysicsComponent* Component = Actor->GetComponentByClass<UJoltPhysicsComponent>(); \
-if (!Component) return; \
+if (!Component) { UE_LOG(LogJoltPhysicsComponent, Error, \
+TEXT("%hs: Component not found on %s - Jolt Physics setters can only be called on actors with a Jolt Physics Component") \
+, __FUNCTION__, *Actor->GetName()); return; } \
 if (Component->BodyID == JPH::BodyID::cInvalidBodyID) return; \
 JPH::BodyID BodyID = JPH::BodyID(Component->BodyID); \
 UJoltSubsystem* Subsystem = GetJoltSubsystem(Actor); \
-if (!Subsystem) return;
+if (!Subsystem) { UE_LOG(LogJoltPhysicsComponent, Error, \
+TEXT("%hs: Subsystem not found for %s") \
+, __FUNCTION__, *Actor->GetName()); return; }
 
 namespace
 {
@@ -56,11 +64,19 @@ void UJoltPhysicsComponent::BeginPlay()
 		// The execution order of BeginPlay across actors isn't guaranteed, so we don't have the same luxury.
 		// If it causes issues with determinism, we can loop through all jolt physics components in AddAllJoltActors, and sort them there.
 		// For now though, this should be okay... hopefully.
+		
 		BodyID = MotionType == EJoltMotionType::Static ?
 		   JoltSubsystem->AddStaticBody(GetOwner(), Friction, Restitution, ResolvedLayer) :
 		   JoltSubsystem->AddDynamicBody(GetOwner(), Friction, Restitution, Mass, ResolvedLayer);
 		
-		if (BodyID == JPH::BodyID::cInvalidBodyID) return;
+		if (BodyID == JPH::BodyID::cInvalidBodyID)
+		{
+			UE_LOG(LogJoltPhysicsComponent, Error,
+				TEXT("%hs: Failed to create body on %s - Ensure actor has valid geometry")
+				, __FUNCTION__, *GetOwner()->GetName());
+			return;
+		}
+		
 		const JPH::BodyID& Body = JPH::BodyID(BodyID);
 		
 		// Not a massive fan of this, I feel like it would be more appropriate to pass it through AddStatic/DynamicBody.
@@ -257,21 +273,20 @@ void UJoltPhysicsComponent::RecalculateMass()
 	{
 		if (!PrimitiveComponent) continue;
 
-		if (UBodySetup* BodySetup = PrimitiveComponent->GetBodySetup())
+		if (const UBodySetup* BodySetup = PrimitiveComponent->GetBodySetup())
 		{
-			const float ComputedMass = BodySetup->CalculateMass(PrimitiveComponent);
-			
-			if (ComputedMass > 0.0f)
+			if (const float ComputedMass = BodySetup->CalculateMass(PrimitiveComponent); ComputedMass > 0.0f)
 			{
 				TotalMass += ComputedMass;
 			}
 		}
 	}
 
-	if (TotalMass > 0.0f)
-	{
+	if (TotalMass > 0.0f) 
 		Mass = TotalMass;
-	}
+	else 
+		UE_LOG(LogJoltPhysicsComponent, Error,
+		TEXT("%hs: %s has a zero or negative mass - Ensure actor has valid geometry"), __FUNCTION__, *GetOwner()->GetName());
 }
 
 #if WITH_EDITOR
