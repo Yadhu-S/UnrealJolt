@@ -134,6 +134,71 @@ void UJoltSubsystem::AddPostInterpolationCallback(const TDelegate<void(float)>& 
 	PostInterpolationCallbacks.Add(callback);
 }
 
+void UJoltSubsystem::RegisterPhysicsListener(AActor* Listener)
+{
+	if (!Listener)
+	{
+		UE_LOG(JoltSubSystemLogs, Warning, TEXT("RegisterPhysicsListener: Listener is invalid"))
+		return;
+	}
+
+	if (Listener->Implements<UJoltPhysicsCallbackInterface>())
+	{
+		PhysicsListeners.AddUnique(TWeakObjectPtr<UObject>(Listener));
+	}
+	else
+	{
+		UE_LOG(JoltSubSystemLogs, Warning, TEXT("RegisterPhysicsListener: %s does not implement IJoltPhysicsCallbackInterface"), *Listener->GetName());
+	}
+}
+
+void UJoltSubsystem::UnregisterPhysicsListener(AActor* Listener)
+{
+    if (!Listener)
+    {
+        UE_LOG(JoltSubSystemLogs, Warning, TEXT("UnregisterPhysicsListener: Listener is invalid"))
+        return;
+    }
+	
+    PhysicsListeners.RemoveAll([Listener](const TWeakObjectPtr<>& Entry)
+    {
+        return Entry.Get() == Listener;
+    });
+}
+
+void UJoltSubsystem::BroadcastPrePhysicsListeners(float DeltaTime)
+{
+	for (auto It = PhysicsListeners.CreateIterator(); It; ++It)
+	{
+		UObject* Obj = It->Get();
+
+		// Prune invalid physics listeners
+		if (!IsValid(Obj))
+		{
+			It.RemoveCurrent();
+			continue;
+		}
+
+		IJoltPhysicsCallbackInterface::Execute_OnPrePhysicsStep(Obj, DeltaTime);
+	}
+}
+
+void UJoltSubsystem::BroadcastPostPhysicsListeners(float DeltaTime)
+{
+	for (auto It = PhysicsListeners.CreateIterator(); It; ++It)
+	{
+		UObject* Obj = It->Get();
+
+		if (!IsValid(Obj))
+		{
+			It.RemoveCurrent();
+			continue;
+		}
+
+		IJoltPhysicsCallbackInterface::Execute_OnPostPhysicsStep(Obj, DeltaTime);
+	}
+}
+
 void UJoltSubsystem::SetTimeScale(double deltaSeconds)
 {
 	ConfiguredDeltaSeconds = deltaSeconds;
@@ -207,6 +272,9 @@ void UJoltSubsystem::OnWorldBeginPlay(UWorld& InWorld)
 		JoltSettings->bEnableMultithreading);
 
 	JoltWorker = new FJoltWorker(WorkerOptions);
+
+	JoltWorker->AddPrePhysicsCallback(TDelegate<void(float)>::CreateUObject(this, &UJoltSubsystem::BroadcastPrePhysicsListeners));
+	JoltWorker->AddPostPhysicsCallback(TDelegate<void(float)>::CreateUObject(this, &UJoltSubsystem::BroadcastPostPhysicsListeners));
 
 	bIsReady = true;
 	OnReady.Broadcast();

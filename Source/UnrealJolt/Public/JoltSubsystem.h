@@ -11,6 +11,7 @@
 #include "Subsystems/WorldSubsystem.h"
 #include "JoltLayerTable.h"
 #include "JoltFilters.h"
+#include "JoltPhysicsCallbackInterface.h"
 #include "Delegates/DelegateCombinations.h"
 #include "UObject/ObjectMacros.h"
 
@@ -266,6 +267,16 @@ public:
 	/** Fired once per frame after InterpolatePhysicsFrame completes. dt = frame delta. */
 	void AddPostInterpolationCallback(const TDelegate<void(float)>& callback);
 
+	// Blueprint physics callback listeners
+	
+	/** Register an actor as a listener for pre and post physics step callbacks. Must implement IJoltPhysicsCallbackInterface. */
+	UFUNCTION(BlueprintCallable, Category = "Jolt Physics|Callbacks", meta = (DefaultToSelf = "Listener"))
+	void RegisterPhysicsListener(AActor* Listener);
+
+	/** Unregister an actor as a listener for pre and post physics step callbacks. Must implement IJoltPhysicsCallbackInterface. */
+	UFUNCTION(BlueprintCallable, Category = "Jolt Physics|Callbacks", meta = (DefaultToSelf = "Listener"))
+	void UnregisterPhysicsListener(AActor* Listener);
+	
 	/** Physics-frame interpolation alpha (0..1) computed in the most recent Tick. */
 	double GetPhysicsAlpha() const { return PhysicsAlpha_; }
 
@@ -473,6 +484,12 @@ private:
 	TMap<const JPH::BodyID*, FFrameHistory> JoltBodyTransformHistory;
 
 	TArray<TDelegate<void(float)>> PostInterpolationCallbacks;
+	
+	void BroadcastPrePhysicsListeners(float DeltaTime);
+	void BroadcastPostPhysicsListeners(float DeltaTime);
+	
+	UPROPERTY() 
+	TArray<TWeakObjectPtr<UObject>> PhysicsListeners;
 
 	bool bIsReady = false;
 
