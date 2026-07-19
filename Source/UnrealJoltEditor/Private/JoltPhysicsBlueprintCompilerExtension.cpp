@@ -42,75 +42,75 @@ void UJoltPhysicsBlueprintCompilerExtension::ProcessBlueprintCompiled(const FKis
 	for (UK2Node_CallFunction* CallNode : CallNodes)
 	{
 		UFunction* Function = CallNode->GetTargetFunction();
-		if (!Function || !Function->HasMetaData(TEXT("RequireActorComponent")))
-			continue;
-
-		// Metadata is formatted as "ParamName,ComponentClassName"
-		FString ParamName;
-		FString ComponentClassName;
-		if (!Function->GetMetaData(TEXT("RequireActorComponent")).Split(TEXT(","), &ParamName, &ComponentClassName))
-			continue;
-		
-		ComponentClassName.RemoveFromStart(TEXT("U"));
-
-		UEdGraphPin* ActorPin = CallNode->FindPin(*ParamName);
-		if (!ActorPin) continue;
-
-		const bool bDefaultsToSelf = Function->GetMetaData(TEXT("DefaultToSelf")) == ParamName;
-		UClass* RequiredComponentClass = FindFirstObject<UClass>(*ComponentClassName);
-
-		if (ActorPin->LinkedTo.Num() == 0)
+		if (!Function) continue;
+		for (TFieldIterator<FProperty> ParamIt(Function); ParamIt && (ParamIt->PropertyFlags & CPF_Parm); ++ParamIt)
 		{
-			// If we default to self - unconnected pin refers to Self
-			if (bDefaultsToSelf)
+			FProperty* ParamProperty = *ParamIt;
+			if (ParamProperty->PropertyFlags & CPF_ReturnParm) continue;
+			if (!ParamProperty->HasMetaData(TEXT("RequireActorComponent"))) continue;
+
+			const FString ParamName = ParamProperty->GetName();
+			const FString ComponentClassName = ParamProperty->GetMetaData(TEXT("RequireActorComponent"));
+
+			UEdGraphPin* ActorPin = CallNode->FindPin(*ParamName);
+			if (!ActorPin) continue;
+
+			const bool bDefaultsToSelf = Function->GetMetaData(TEXT("DefaultToSelf")) == ParamName;
+			UClass* RequiredComponentClass = FindFirstObject<UClass>(*ComponentClassName);
+
+			if (ActorPin->LinkedTo.Num() == 0)
 			{
-				UClass* SelfClass = CompilationContext.Blueprint->SkeletonGeneratedClass.Get();
-				if (!DoesActorClassHaveComponent(SelfClass, RequiredComponentClass))
+				// Unconnected pin defaulting to self refers to the blueprint's own class
+				if (bDefaultsToSelf)
 				{
-					CompilationContext.MessageLog.Error(*FString::Printf(TEXT("@@ requires %s to have a %s"), *ParamName, *ComponentClassName), CallNode);
+					UClass* SelfClass = CompilationContext.Blueprint->SkeletonGeneratedClass.Get();
+					if (!DoesActorClassHaveComponent(SelfClass, RequiredComponentClass))
+					{
+						CompilationContext.MessageLog.Error(*FString::Printf(TEXT("@@ requires %s to have a %s"), *ParamName, *ComponentClassName), CallNode);
+					}
+					continue;
+				}
+
+				if (ActorPin->DefaultObject == nullptr && ActorPin->DefaultValue.IsEmpty())
+				{
+					CompilationContext.MessageLog.Error(*FString::Printf(TEXT("@@ has a null %s, requires an Actor with a %s"), *ParamName, *ComponentClassName), CallNode);
 				}
 				continue;
 			}
 
-			if (ActorPin->DefaultObject == nullptr && ActorPin->DefaultValue.IsEmpty())
+			UEdGraphPin* SourcePin = ActorPin->LinkedTo[0];
+			UK2Node* SourceNode = Cast<UK2Node>(SourcePin->GetOwningNode());
+			AActor* ReferencedLevelActor = SourceNode ? SourceNode->GetReferencedLevelActor() : nullptr;
+
+			bool bHasComponent;
+
+			// A level actor reference lets us check its components directly
+			if (ReferencedLevelActor)
 			{
-				CompilationContext.MessageLog.Error(*FString::Printf(TEXT("@@ has a null %s, requires an Actor with a %s"), *ParamName, *ComponentClassName), CallNode);
-			}
-			continue;
-		}
-		
-		UEdGraphPin* SourcePin = ActorPin->LinkedTo[0];
-		UK2Node* SourceNode = Cast<UK2Node>(SourcePin->GetOwningNode());
-		AActor* ReferencedLevelActor = SourceNode ? SourceNode->GetReferencedLevelActor() : nullptr;
-
-		bool bHasComponent;
-
-		// A level actor reference lets us check its components directly
-		if (ReferencedLevelActor)
-		{
-			bHasComponent = ReferencedLevelActor->FindComponentByClass(RequiredComponentClass) != nullptr;
-		}
-		else
-		{
-			UClass* ConnectedClass;
-
-			// If self, we resolve against the blueprint's class
-			if (SourcePin->PinType.PinSubCategory == UEdGraphSchema_K2::PSC_Self)
-			{
-				ConnectedClass = CompilationContext.Blueprint->SkeletonGeneratedClass.Get();
+				bHasComponent = ReferencedLevelActor->FindComponentByClass(RequiredComponentClass) != nullptr;
 			}
 			else
 			{
-				ConnectedClass = Cast<UClass>(SourcePin->PinType.PinSubCategoryObject.Get());
+				UClass* ConnectedClass;
+
+				// If self, resolve against the blueprint's own generated class
+				if (SourcePin->PinType.PinSubCategory == UEdGraphSchema_K2::PSC_Self)
+				{
+					ConnectedClass = CompilationContext.Blueprint->SkeletonGeneratedClass.Get();
+				}
+				else
+				{
+					ConnectedClass = Cast<UClass>(SourcePin->PinType.PinSubCategoryObject.Get());
+				}
+
+				bHasComponent = ConnectedClass && DoesActorClassHaveComponent(ConnectedClass, RequiredComponentClass);
 			}
 
-			bHasComponent = ConnectedClass && DoesActorClassHaveComponent(ConnectedClass, RequiredComponentClass);
-		}
-		
-		// Fail compilation when an actor does not have required component
-		if (RequiredComponentClass && !bHasComponent)
-		{
-			CompilationContext.MessageLog.Error(*FString::Printf(TEXT("@@ requires %s to have a %s"), *ParamName, *ComponentClassName), CallNode);
+			// Fail compilation when an actor does not have the required component
+			if (RequiredComponentClass && !bHasComponent)
+			{
+				CompilationContext.MessageLog.Error(*FString::Printf(TEXT("@@ requires %s to have a %s"), *ParamName, *ComponentClassName), CallNode);
+			}
 		}
 	}
 }
