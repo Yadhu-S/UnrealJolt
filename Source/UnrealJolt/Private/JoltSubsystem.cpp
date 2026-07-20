@@ -159,16 +159,15 @@ void UJoltSubsystem::RegisterPhysicsListener(AActor* Listener)
 
 void UJoltSubsystem::UnregisterPhysicsListener(AActor* Listener)
 {
-    if (!Listener)
-    {
-        UE_LOG(JoltSubSystemLogs, Warning, TEXT("UnregisterPhysicsListener: Listener is invalid"))
-        return;
-    }
-	
-    PhysicsListeners.RemoveAll([Listener](const TWeakObjectPtr<>& Entry)
-    {
-        return Entry.Get() == Listener;
-    });
+	if (!Listener)
+	{
+		UE_LOG(JoltSubSystemLogs, Warning, TEXT("UnregisterPhysicsListener: Listener is invalid"))
+		return;
+	}
+
+	PhysicsListeners.RemoveAll([Listener](const TWeakObjectPtr<>& Entry) {
+		return Entry.Get() == Listener;
+	});
 }
 
 void UJoltSubsystem::BroadcastPrePhysicsListeners(float DeltaTime)
@@ -1527,6 +1526,15 @@ ALandscape* UJoltSubsystem::FindSingleLandscape(const UWorld* world)
 
 bool UJoltSubsystem::CookBodies() const
 {
+	/*
+	 * Kind of a hack to prevent server builds from overwriting cooked jolt data
+	 * TODO: Maybe do a robust BUILD dropdown menu in the build section later?
+	 */
+	if (FindSingleLandscape(GetWorld()) != nullptr && HeightFieldShapes.Num() == 0)
+	{
+		UE_LOG(JoltSubSystemLogs, Error, TEXT("CookBodies: landscape has no heightfield — refusing to save."));
+		return false;
+	}
 
 	UJoltDataAsset* joltDataasset = NewObject<UJoltDataAsset>();
 	joltDataasset->LoadBodies(SavedBodies);
