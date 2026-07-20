@@ -39,11 +39,6 @@ void FUnrealJoltEditorModule::ShutdownModule()
 		PropertyModule.UnregisterCustomClassLayout(UJoltSettings::StaticClass()->GetFName());
 		PropertyModule.UnregisterCustomPropertyTypeLayout(TEXT("EJoltMotionType"));
 		PropertyModule.UnregisterCustomClassLayout(AActor::StaticClass()->GetFName());
-
-		TSharedRef<FPropertySection> PhysicsSection = PropertyModule.FindOrCreateSection(
-			UStaticMeshComponent::StaticClass()->GetFName(), "Physics", LOCTEXT("Physics", "Physics"));
-		PhysicsSection->RemoveCategory("Jolt Physics");
-
 		PropertyModule.NotifyCustomizationModuleChanged();
 	}
 }
