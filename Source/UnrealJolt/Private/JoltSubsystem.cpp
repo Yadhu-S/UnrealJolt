@@ -15,10 +15,14 @@
 #include "UObject/WeakObjectPtrTemplates.h"
 #include "UnrealJolt/Helpers.h"
 #include "JoltFilters.h"
+#include "Engine/Engine.h"
 #include "Landscape.h"
 #include "LandscapeComponent.h"
+#include "LandscapeDataAccess.h"
+#include "LandscapeHeightfieldCollisionComponent.h"
 #include "LandscapeSplineSegment.h"
 #include "LandscapeSplinesComponent.h"
+#include "PhysicalMaterials/PhysicalMaterial.h"
 #include "Misc/AssertionMacros.h"
 #include "PhysicsEngine/BodySetup.h"
 #include "Chaos/TriangleMeshImplicitObject.h"
@@ -134,6 +138,70 @@ void UJoltSubsystem::AddPostInterpolationCallback(const TDelegate<void(float)>& 
 	PostInterpolationCallbacks.Add(callback);
 }
 
+void UJoltSubsystem::RegisterPhysicsListener(AActor* Listener)
+{
+	if (!Listener)
+	{
+		UE_LOG(JoltSubSystemLogs, Warning, TEXT("RegisterPhysicsListener: Listener is invalid"))
+		return;
+	}
+
+	if (Listener->Implements<UJoltPhysicsCallbackInterface>())
+	{
+		PhysicsListeners.AddUnique(TWeakObjectPtr<UObject>(Listener));
+	}
+	else
+	{
+		UE_LOG(JoltSubSystemLogs, Warning, TEXT("RegisterPhysicsListener: %s does not implement IJoltPhysicsCallbackInterface"), *Listener->GetName());
+	}
+}
+
+void UJoltSubsystem::UnregisterPhysicsListener(AActor* Listener)
+{
+	if (!Listener)
+	{
+		UE_LOG(JoltSubSystemLogs, Warning, TEXT("UnregisterPhysicsListener: Listener is invalid"))
+		return;
+	}
+
+	PhysicsListeners.RemoveAll([Listener](const TWeakObjectPtr<>& Entry) {
+		return Entry.Get() == Listener;
+	});
+}
+
+void UJoltSubsystem::BroadcastPrePhysicsListeners(float DeltaTime)
+{
+	for (auto It = PhysicsListeners.CreateIterator(); It; ++It)
+	{
+		UObject* Obj = It->Get();
+
+		// Prune invalid physics listeners
+		if (!IsValid(Obj))
+		{
+			It.RemoveCurrent();
+			continue;
+		}
+
+		IJoltPhysicsCallbackInterface::Execute_OnPrePhysicsStep(Obj, DeltaTime);
+	}
+}
+
+void UJoltSubsystem::BroadcastPostPhysicsListeners(float DeltaTime)
+{
+	for (auto It = PhysicsListeners.CreateIterator(); It; ++It)
+	{
+		UObject* Obj = It->Get();
+
+		if (!IsValid(Obj))
+		{
+			It.RemoveCurrent();
+			continue;
+		}
+
+		IJoltPhysicsCallbackInterface::Execute_OnPostPhysicsStep(Obj, DeltaTime);
+	}
+}
+
 void UJoltSubsystem::SetTimeScale(double deltaSeconds)
 {
 	ConfiguredDeltaSeconds = deltaSeconds;
@@ -150,9 +218,10 @@ void UJoltSubsystem::SetPaused(bool bPaused)
 
 void UJoltSubsystem::SetGravity(const FVector& gravity)
 {
-	if (!MainPhysicsSystem) return;
+	if (!MainPhysicsSystem)
+		return;
 	MainPhysicsSystem->SetGravity(JoltHelpers::ToJoltVec3(gravity));
-	
+
 	// We need to wake up all dynamic bodies once gravity is set
 	for (const FJoltBodyActor& JoltBodyActor : JoltBodyActors)
 	{
@@ -163,7 +232,8 @@ void UJoltSubsystem::SetGravity(const FVector& gravity)
 
 FVector UJoltSubsystem::GetGravity() const
 {
-	if (!MainPhysicsSystem) return FVector();
+	if (!MainPhysicsSystem)
+		return FVector();
 	return JoltHelpers::ToUESize(MainPhysicsSystem->GetGravity());
 }
 
@@ -207,6 +277,9 @@ void UJoltSubsystem::OnWorldBeginPlay(UWorld& InWorld)
 		JoltSettings->bEnableMultithreading);
 
 	JoltWorker = new FJoltWorker(WorkerOptions);
+
+	JoltWorker->AddPrePhysicsCallback(TDelegate<void(float)>::CreateUObject(this, &UJoltSubsystem::BroadcastPrePhysicsListeners));
+	JoltWorker->AddPostPhysicsCallback(TDelegate<void(float)>::CreateUObject(this, &UJoltSubsystem::BroadcastPostPhysicsListeners));
 
 	bIsReady = true;
 	OnReady.Broadcast();
@@ -730,16 +803,58 @@ const JPH::Shape* UJoltSubsystem::ProcessShapeElement(const UShapeComponent* sha
 
 const JoltPhysicsMaterial* UJoltSubsystem::GetJoltPhysicsMaterial(const UPhysicalMaterial* UEPhysicsMat)
 {
+	const EPhysicalSurface surfaceType = UEPhysicsMat->SurfaceType.GetValue();
 
-	if (const JoltPhysicsMaterial** FoundPhysicsMaterial = SurfaceJoltMaterialMap.Find(UEPhysicsMat->SurfaceType.GetValue()))
+	if (const JoltPhysicsMaterial** FoundPhysicsMaterial = SurfaceJoltMaterialMap.Find(surfaceType))
 	{
 		return *FoundPhysicsMaterial;
 	}
 
 	JoltPhysicsMaterial* newPhysicsMaterial = JoltHelpers::ToJoltPhysicsMaterial(UEPhysicsMat);
-	SurfaceJoltMaterialMap.Add(UEPhysicsMat->SurfaceType.GetValue(), newPhysicsMaterial);
-	SurfaceUEMaterialMap.Add(UEPhysicsMat->SurfaceType.GetValue(), TWeakObjectPtr<const UPhysicalMaterial>(UEPhysicsMat));
+	SurfaceJoltMaterialMap.Add(surfaceType, newPhysicsMaterial);
+	SurfaceUEMaterialMap.Add(surfaceType, TWeakObjectPtr<const UPhysicalMaterial>(UEPhysicsMat));
 	return newPhysicsMaterial;
+}
+
+const JoltPhysicsMaterial* UJoltSubsystem::GetOrCreateJoltMaterialForSurface(const EPhysicalSurface surfaceType, const float friction, const float restitution)
+{
+	if (const JoltPhysicsMaterial** FoundPhysicsMaterial = SurfaceJoltMaterialMap.Find(surfaceType))
+	{
+		if (((*FoundPhysicsMaterial)->Friction != friction || (*FoundPhysicsMaterial)->Restitution != restitution))
+		{
+			UE_LOG(JoltSubSystemLogs, Warning,
+				TEXT("Conflicting values for physics materials. Cook stale, re cook"));
+		}
+		return *FoundPhysicsMaterial;
+	}
+
+	JoltPhysicsMaterial* newPhysicsMaterial = new JoltPhysicsMaterial();
+	newPhysicsMaterial->Friction = friction;
+	newPhysicsMaterial->Restitution = restitution;
+	newPhysicsMaterial->SurfaceType = surfaceType;
+	SurfaceJoltMaterialMap.Add(surfaceType, newPhysicsMaterial);
+	return newPhysicsMaterial;
+}
+
+void UJoltSubsystem::RestoreShapeMaterials(const FJoltShapeData& shapeData, const JPH::Ref<JPH::Shape>& loadedShape)
+{
+	if (shapeData.Materials.IsEmpty())
+	{
+		return;
+	}
+
+	JPH::PhysicsMaterialList materialList;
+	materialList.reserve(shapeData.Materials.Num());
+	for (const FJoltShapeMaterialData& materialData : shapeData.Materials)
+	{
+		if (materialData.SurfaceType == FJoltShapeMaterialData::NullMaterialSlot)
+		{
+			materialList.push_back(nullptr);
+			continue;
+		}
+		materialList.push_back(GetOrCreateJoltMaterialForSurface(static_cast<EPhysicalSurface>(materialData.SurfaceType), materialData.Friction, materialData.Restitution));
+	}
+	loadedShape->RestoreMaterialState(materialList.data(), static_cast<JPH::uint>(materialList.size()));
 }
 
 const UPhysicalMaterial* UJoltSubsystem::GetUEPhysicsMaterial(const JoltPhysicsMaterial* JoltPhysicsMat) const
@@ -1227,8 +1342,11 @@ void UJoltSubsystem::LoadLandscapeFromDataAsset()
 			continue;
 		}
 
+		JPH::Ref<JPH::Shape> loadedShape = result.Get();
+		RestoreShapeMaterials(shape, loadedShape);
+
 		JPH::BodyCreationSettings bodyCreationSettings(
-			result.Get(),
+			loadedShape,
 			JoltHelpers::ToJoltPos(shape.WorldTransform.GetLocation()),
 			JoltHelpers::ToJoltRot(shape.WorldTransform.GetRotation()),
 			shape.MotionType,
@@ -1276,6 +1394,15 @@ ALandscape* UJoltSubsystem::FindSingleLandscape(const UWorld* world)
 
 bool UJoltSubsystem::CookBodies() const
 {
+	/*
+	 * Kind of a hack to prevent server builds from overwriting cooked jolt data
+	 * TODO: Maybe do a robust BUILD dropdown menu in the build section later?
+	 */
+	if (FindSingleLandscape(GetWorld()) != nullptr && HeightFieldShapes.Num() == 0)
+	{
+		UE_LOG(JoltSubSystemLogs, Error, TEXT("CookBodies: landscape has no heightfield — refusing to save."));
+		return false;
+	}
 
 	UJoltDataAsset* joltDataasset = NewObject<UJoltDataAsset>();
 	joltDataasset->LoadBodies(SavedBodies);
@@ -1309,6 +1436,74 @@ bool UJoltSubsystem::CookBodies() const
 	FilePath = FPaths::ConvertRelativePathToFull(FilePath);
 
 	return UPackage::Save(Package, SavedAsset, *FilePath, SaveArgs).IsSuccessful();
+}
+
+bool UJoltSubsystem::BuildLandscapeMaterialIndices(ULandscapeComponent* landscapeComponent, const uint32 componentSize, TArray<uint8>& outMaterialIndices, JPH::PhysicsMaterialList& outMaterialList)
+{
+	ULandscapeHeightfieldCollisionComponent* collisionComponent = landscapeComponent->GetCollisionComponent();
+	if (collisionComponent == nullptr)
+	{
+		UE_LOG(JoltSubSystemLogs, Warning, TEXT("No collision component on landscape component '%s' — physics materials skipped"), *landscapeComponent->GetName());
+		return false;
+	}
+
+	/*Jolt material limit is 256
+	 * https://github.com/jrouwe/JoltPhysics/blob/master/Jolt/Physics/Collision/Shape/HeightFieldShape.cpp#L495
+	 */
+
+	// usually 1
+	const float collisionScale = landscapeComponent->ComponentSizeQuads > 0
+		? static_cast<float>(collisionComponent->CollisionSizeQuads) / static_cast<float>(landscapeComponent->ComponentSizeQuads)
+		: 1.0f;
+
+	TMap<EPhysicalSurface, uint8> materialIndexBySurface;
+
+	const uint32 quadCount = componentSize - 1;
+	outMaterialIndices.SetNumUninitialized(quadCount * quadCount);
+
+	// jolt material of quad (x, y) = heights[(y * ComponentSize) + x] same as heightfield
+	for (uint32 y = 0; y < quadCount; ++y)
+	{
+		for (uint32 x = 0; x < quadCount; ++x)
+		{
+			// Quad-center sample so the query lands inside the matching collision cell
+			const UPhysicalMaterial* physMaterial = collisionComponent->GetPhysicalMaterial(
+				(x + 0.5f) * collisionScale,
+				(y + 0.5f) * collisionScale,
+				EHeightfieldSource::Complex);
+
+			if (physMaterial == nullptr)
+			{
+				// fallback
+				physMaterial = GEngine->DefaultPhysMaterial.Get();
+			}
+
+			uint8 materialIndex = 0;
+			if (physMaterial != nullptr)
+			{
+				const EPhysicalSurface surfaceType = physMaterial->SurfaceType.GetValue();
+				if (const uint8* existingIndex = materialIndexBySurface.Find(surfaceType))
+				{
+					materialIndex = *existingIndex;
+				}
+				else
+				{
+					materialIndex = static_cast<uint8>(outMaterialList.size());
+					outMaterialList.push_back(GetJoltPhysicsMaterial(physMaterial));
+					materialIndexBySurface.Add(surfaceType, materialIndex);
+				}
+			}
+			outMaterialIndices[(y * quadCount) + x] = materialIndex;
+		}
+	}
+
+	if (outMaterialList.empty())
+	{
+		UE_LOG(JoltSubSystemLogs, Warning, TEXT("no physics materials on landscape component '%s'"), *landscapeComponent->GetName());
+		return false;
+	}
+
+	return true;
 }
 
 void UJoltSubsystem::GetAllLandscapeHeights(const ALandscape* landscapeActor)
@@ -1347,7 +1542,19 @@ void UJoltSubsystem::GetAllLandscapeHeights(const ALandscape* landscapeActor)
 
 		JPH::Vec3 joltScale = JoltHelpers::ToJoltVec3(scale);
 		joltScale.SetY(1); // We've already scaled Z(Up is Y in Jolt). Don't need to scale again
-		JPH::Ref<JPH::HeightFieldShapeSettings> heightFieldShapeSettigns = new JPH::HeightFieldShapeSettings(heights, JPH::Vec3(0, 0, 0), joltScale, ComponentSize);
+
+		TArray<uint8>			 materialIndices;
+		JPH::PhysicsMaterialList materialList;
+
+		const bool bHasMaterials = BuildLandscapeMaterialIndices(landscapeComponent, ComponentSize, materialIndices, materialList);
+
+		JPH::Ref<JPH::HeightFieldShapeSettings> heightFieldShapeSettigns = new JPH::HeightFieldShapeSettings(
+			heights,
+			JPH::Vec3(0, 0, 0),
+			joltScale,
+			ComponentSize,
+			bHasMaterials ? materialIndices.GetData() : nullptr,
+			bHasMaterials ? materialList : JPH::PhysicsMaterialList());
 		heightFieldShapeSettigns->AddRef();
 		HeightFieldShapes.Add(heightFieldShapeSettigns);
 
