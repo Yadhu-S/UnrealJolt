@@ -606,6 +606,10 @@ public:
 		return MainPhysicsSystem->GetNumBodies();
 	}
 
+	static bool IsPhysicsGeometryExtractable(const UStaticMeshComponent* SMC, FString* OutReason = nullptr);
+
+	bool HasBodyCapacity() const;
+	
 	friend class UJoltSkeletalMeshComponent;
 	friend class JoltAxisConstraint;
 };

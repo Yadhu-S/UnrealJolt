@@ -194,7 +194,7 @@ private:
     TArray<FString> GetObjectLayerNames() const;
 	
 	FName ResolveLayer() const;
-	void  RecalculateMass();
+	void RecalculateMass();
 	
 	#if WITH_EDITOR
 	virtual void PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEvent) override;

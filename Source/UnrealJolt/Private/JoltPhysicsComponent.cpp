@@ -41,6 +41,8 @@ void UJoltPhysicsComponent::BeginPlay()
 	GetOwner()->GetComponents<UStaticMeshComponent>(StaticMeshComponents);
 
 	bool bFoundValidGeometry = false;
+	const bool bNeedsMassCalculation = MotionType == EJoltMotionType::Dynamic && !bOverrideMass;
+	float TotalMass = 0.0f;
 	
 	for (UStaticMeshComponent* StaticMeshComponent : StaticMeshComponents)
 	{
@@ -49,8 +51,17 @@ void UJoltPhysicsComponent::BeginPlay()
 		if (!StaticMeshComponent->GetStaticMesh())
 		{
 			UE_LOG(LogJoltPhysicsComponent, Warning,
-				TEXT("%hs: Static mesh component %s has no valid static mesh"), 
+				TEXT("%hs: Skipping %s, no valid static mesh"), 
 				__FUNCTION__, *StaticMeshComponent->GetName());
+			continue;
+		}
+		
+		FString ExtractReason;
+		if (!UJoltSubsystem::IsPhysicsGeometryExtractable(StaticMeshComponent, &ExtractReason))
+		{
+			UE_LOG(LogJoltPhysicsComponent, Warning,
+				TEXT("%hs: Skipping %s, no extractable physics geometry (%s)"),
+				__FUNCTION__, *StaticMeshComponent->GetName(), *ExtractReason);
 			continue;
 		}
 		
@@ -78,6 +89,17 @@ void UJoltPhysicsComponent::BeginPlay()
 			}
 		}
 		
+		if (bNeedsMassCalculation)
+		{
+			if (const UBodySetup* BodySetup = StaticMeshComponent->GetBodySetup())
+			{
+				if (const float ComputedMass = BodySetup->CalculateMass(StaticMeshComponent); ComputedMass > 0.0f)
+				{
+					TotalMass += ComputedMass;
+				}
+			}
+		}
+		
 		bFoundValidGeometry = true;
 	}
 	
@@ -87,11 +109,42 @@ void UJoltPhysicsComponent::BeginPlay()
 			TEXT("%hs: %s has no valid geometry to simulate via Jolt Physics"), __FUNCTION__, *GetOwner()->GetName());
 		return;
 	}
-		
+	
+	if (bNeedsMassCalculation)
+	{
+		if (TotalMass > 0.0f) Mass = TotalMass;
+		else UE_LOG(LogJoltPhysicsComponent, Error,
+			TEXT("%hs: %s computed a mass of zero, ensure its static mesh(es) have valid collision, and check for a zero mass override"), __FUNCTION__, *GetOwner()->GetName());
+	}
+	
 	if (UJoltSubsystem* JoltSubsystem = GetJoltSubsystem(GetOwner()))
 	{
 		const FName ResolvedLayer = ResolveLayer();
-		RecalculateMass();
+		
+		if (JoltSubsystem->GetObjectLayerByName(ResolvedLayer) == INDEX_NONE)
+		{
+			UE_LOG(LogJoltPhysicsComponent, Error,
+				TEXT("%hs: Failed to create body on %s, object layer '%s' is not valid"),
+				__FUNCTION__, *GetOwner()->GetName(), *ResolvedLayer.ToString());
+			return;
+		}
+		
+		if (!JoltSubsystem->HasBodyCapacity())
+		{
+			if (const UJoltSettings* Settings = GetDefault<UJoltSettings>())
+			{
+				UE_LOG(LogJoltPhysicsComponent, Error,
+					TEXT("%hs: Failed to create body on %s, at MaxBodies limit (%d)"),
+					__FUNCTION__, *GetOwner()->GetName(), Settings->MaxBodies);
+			} 
+			else
+			{
+				UE_LOG(LogJoltPhysicsComponent, Error,
+					TEXT("%hs: Failed to create body on %s"),
+					__FUNCTION__, *GetOwner()->GetName());
+			}
+			return;
+		}
 		
 		// The benefit of the tagging system is that it sorts the actors after they're iterated -
 		// this way, each actor will be added in the same order everytime.
@@ -106,7 +159,7 @@ void UJoltPhysicsComponent::BeginPlay()
 		if (BodyID == JPH::BodyID::cInvalidBodyID)
 		{
 			UE_LOG(LogJoltPhysicsComponent, Error,
-				TEXT("%hs: Failed to create body on %s - Ensure actor has valid geometry")
+				TEXT("%hs: Failed to create body on %s")
 				, __FUNCTION__, *GetOwner()->GetName());
 			return;
 		}
@@ -140,7 +193,7 @@ void UJoltPhysicsComponent::OnRegister()
 	Super::OnRegister();
 
 	#if WITH_EDITOR
-	if (!bOverrideMass) RecalculateMass();
+	RecalculateMass();
 	#endif
 }
 
@@ -303,8 +356,8 @@ FName UJoltPhysicsComponent::ResolveLayer() const
 
 void UJoltPhysicsComponent::RecalculateMass()
 {
-	// bOverrideMass means the user is hand-authoring mass.
-	if (bOverrideMass || !GetOwner()) return;
+	// Static bodies don't use mass at all, and bOverrideMass means the user is hand-authoring mass.
+	if (MotionType == EJoltMotionType::Static || bOverrideMass || !GetOwner()) return;
 
 	TArray<UPrimitiveComponent*> PrimitiveComponents;
 	GetOwner()->GetComponents<UPrimitiveComponent>(PrimitiveComponents);
@@ -327,7 +380,7 @@ void UJoltPhysicsComponent::RecalculateMass()
 		Mass = TotalMass;
 	else 
 		UE_LOG(LogJoltPhysicsComponent, Error,
-		TEXT("%hs: %s has a zero or negative mass - Ensure actor has valid geometry"), __FUNCTION__, *GetOwner()->GetName());
+		TEXT("%hs: %s computed a mass of zero, ensure its static mesh(es) have valid collision, and check for a zero mass override"), __FUNCTION__, *GetOwner()->GetName());
 }
 
 #if WITH_EDITOR

@@ -656,6 +656,65 @@ void UJoltSubsystem::ExtractComplexPhysicsGeometry(const FTransform& xformSoFar,
 	callback(res.Get(), xformSoFar);
 }
 
+bool UJoltSubsystem::IsPhysicsGeometryExtractable(const UStaticMeshComponent* SMC, FString* OutReason)
+{
+	if (!SMC)
+	{
+		if (OutReason) *OutReason = TEXT("Null static mesh component");
+		return false;
+	}
+
+	const UStaticMesh* Mesh = SMC->GetStaticMesh();
+	if (!Mesh)
+	{
+		if (OutReason) *OutReason = TEXT("No static mesh assigned");
+		return false;
+	}
+
+	const UBodySetup* BodySetup = Mesh->GetBodySetup();
+	if (!BodySetup)
+	{
+		if (OutReason) *OutReason = TEXT("No BodySetup (collision not built)");
+		return false;
+	}
+
+	if (BodySetup->CollisionTraceFlag == CTF_UseComplexAsSimple)
+	{
+		if (BodySetup->TriMeshGeometries.Num() == 0)
+		{
+			if (OutReason) *OutReason = TEXT("Complex-as-simple requested but no cooked tri-mesh on BodySetup");
+			return false;
+		}
+
+		if (!BodySetup->TriMeshGeometries[0].IsValid())
+		{
+			if (OutReason) *OutReason = TEXT("Complex-as-simple requested but cooked tri-mesh is invalid");
+			return false;
+		}
+
+		return true;
+	}
+
+	const int32 ElemCount = BodySetup->AggGeom.BoxElems.Num()
+		+ BodySetup->AggGeom.SphereElems.Num()
+		+ BodySetup->AggGeom.SphylElems.Num()
+		+ BodySetup->AggGeom.ConvexElems.Num();
+
+	if (ElemCount == 0)
+	{
+		if (OutReason) *OutReason = TEXT("Simple collision requested but AggGeom has no primitives");
+		return false;
+	}
+
+	return true;
+}
+
+bool UJoltSubsystem::HasBodyCapacity() const
+{
+	if (!MainPhysicsSystem) return false;
+	return GetNumBodies() < JoltSettings->MaxBodies;
+}
+
 void UJoltSubsystem::RayCastNarrowPhase(const FVector& start, const FVector& end, const FNarrowPhaseQueryDelegate& hitCallback)
 {
 	if (!hitCallback.IsBound())
