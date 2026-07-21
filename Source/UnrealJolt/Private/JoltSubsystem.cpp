@@ -712,7 +712,7 @@ bool UJoltSubsystem::IsPhysicsGeometryExtractable(const UStaticMeshComponent* SM
 bool UJoltSubsystem::HasBodyCapacity() const
 {
 	if (!MainPhysicsSystem) return false;
-	return GetNumBodies() < JoltSettings->MaxBodies;
+	return static_cast<int32>(GetNumBodies()) < JoltSettings->MaxBodies;
 }
 
 void UJoltSubsystem::RayCastNarrowPhase(const FVector& start, const FVector& end, const FNarrowPhaseQueryDelegate& hitCallback)
