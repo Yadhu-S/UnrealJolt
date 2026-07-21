@@ -1776,7 +1776,7 @@ void UJoltSubsystem::ExtractSplineMeshGeometry(const UBodySetup* splineMeshBodyS
 	{
 		return;
 	}
-	ExtractPhysicsGeometry(splineMeshTransform, splineMeshBodySetup, [this, splineMeshLayer](const JPH::Shape* Shape, const FTransform& RelTransform) mutable {
+	auto createSplineMesh = [this, splineMeshLayer](const JPH::Shape* Shape, const FTransform& RelTransform) mutable {
 		JPH::BodyCreationSettings shapeSettings(
 			Shape,
 			JoltHelpers::ToJoltPos(RelTransform.GetLocation()),
@@ -1791,7 +1791,24 @@ void UJoltSubsystem::ExtractSplineMeshGeometry(const UBodySetup* splineMeshBodyS
 		createdBody->SetRestitution(0.7f);
 		createdBody->SetFriction(0.5f);
 		SavedBodies.Add(createdBody);
-	});
+	};
+
+	if (splineMeshBodySetup->GetCollisionTraceFlag() == ECollisionTraceFlag::CTF_UseComplexAsSimple
+		&& splineMeshBodySetup->TriMeshGeometries.Num() > 0)
+	{
+		ExtractComplexPhysicsGeometry(splineMeshTransform, splineMeshBodySetup,
+			splineMeshBodySetup->GetOuter() ? splineMeshBodySetup->GetOuter()->GetName() : FString(TEXT("SplineMesh")),
+			createSplineMesh);
+	}
+	else
+	{
+		if (splineMeshBodySetup->GetCollisionTraceFlag() == ECollisionTraceFlag::CTF_UseComplexAsSimple)
+		{
+			UE_LOG(JoltSubSystemLogs, Warning,
+				TEXT("Landscape Spline mesh request complex-as-simple, but no cooked tri-mesh on the spline body setup"));
+		}
+		ExtractPhysicsGeometry(splineMeshTransform, splineMeshBodySetup, createSplineMesh);
+	}
 }
 
 #endif
