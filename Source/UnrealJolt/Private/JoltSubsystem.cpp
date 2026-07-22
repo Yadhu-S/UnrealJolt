@@ -1788,8 +1788,8 @@ void UJoltSubsystem::ExtractSplineMeshGeometry(const UBodySetup* splineMeshBodyS
 		JPH::Body* createdBody = BodyInterface->CreateBodyWithoutID(shapeSettings);
 		check(createdBody != nullptr);
 		// TODO read this from the physics material
-		createdBody->SetRestitution(0.7f);
-		createdBody->SetFriction(0.5f);
+		createdBody->SetRestitution(0.1f);
+		createdBody->SetFriction(0.1f);
 		SavedBodies.Add(createdBody);
 	};
 
