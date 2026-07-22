@@ -1,6 +1,5 @@
 #include "UnrealJoltEditor.h"
 #include "JoltMotionTypeCustomization.h"
-#include "JoltPhysicsDetailsCustomization.h"
 #include "JoltSettings.h"
 #include "JoltSettingsDetails.h"
 #include "Modules/ModuleManager.h"
@@ -19,14 +18,6 @@ void FUnrealJoltEditorModule::StartupModule()
 	PropertyModule.RegisterCustomPropertyTypeLayout(
 		TEXT("EJoltMotionType"),
 		FOnGetPropertyTypeCustomizationInstance::CreateStatic(&FJoltMotionTypeCustomization::MakeInstance));
-
-	PropertyModule.RegisterCustomClassLayout(
-		AActor::StaticClass()->GetFName(),
-		FOnGetDetailCustomizationInstance::CreateStatic(&FJoltPhysicsDetailsCustomization::MakeInstance));
-	
-	TSharedRef<FPropertySection> PhysicsSection = PropertyModule.FindOrCreateSection(
-		AActor::StaticClass()->GetFName(), "Physics", LOCTEXT("Physics", "Physics"));
-	PhysicsSection->AddCategory("Jolt Physics");
 	
 	PropertyModule.NotifyCustomizationModuleChanged();
 }
@@ -37,8 +28,6 @@ void FUnrealJoltEditorModule::ShutdownModule()
 	{
 		FPropertyEditorModule& PropertyModule = FModuleManager::GetModuleChecked<FPropertyEditorModule>("PropertyEditor");
 		PropertyModule.UnregisterCustomClassLayout(UJoltSettings::StaticClass()->GetFName());
-		PropertyModule.UnregisterCustomPropertyTypeLayout(TEXT("EJoltMotionType"));
-		PropertyModule.UnregisterCustomClassLayout(AActor::StaticClass()->GetFName());
 		PropertyModule.NotifyCustomizationModuleChanged();
 	}
 }
