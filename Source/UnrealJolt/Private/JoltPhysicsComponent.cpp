@@ -202,7 +202,7 @@ void UJoltPhysicsComponent::SetObjectLayer(AActor* Actor, FName NewObjectLayer)
 	JOLT_GET_COMPONENT_AND_SUBSYSTEM()
 	
 	Component->Layer = NewObjectLayer;
-	Subsystem->JoltSetObjectLayer(BodyID, NewObjectLayer);
+	Subsystem->JoltSetObjectLayer(BodyID, Component->ResolveLayer());
 }
 
 void UJoltPhysicsComponent::SetMass(AActor* Actor, const float NewMass)

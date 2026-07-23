@@ -15,6 +15,7 @@
 #include "UObject/WeakObjectPtrTemplates.h"
 #include "UnrealJolt/Helpers.h"
 #include "JoltFilters.h"
+#include "JoltPhysicsComponent.h"
 #include "Engine/Engine.h"
 #include "Landscape.h"
 #include "LandscapeComponent.h"
