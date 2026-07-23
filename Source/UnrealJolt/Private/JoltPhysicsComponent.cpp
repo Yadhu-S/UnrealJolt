@@ -31,10 +31,77 @@ UJoltPhysicsComponent::UJoltPhysicsComponent()
 	PrimaryComponentTick.bCanEverTick = false;
 }
 
+void UJoltPhysicsComponent::OnComponentCreated()
+{
+	Super::OnComponentCreated();
+
+	SortID = FGuid::NewGuid();
+}
+
+void UJoltPhysicsComponent::OnRegister()
+{
+	Super::OnRegister();
+
+	#if WITH_EDITOR
+	RecalculateMass();
+	#endif
+}
+
+void UJoltPhysicsComponent::PostLoad()
+{
+	Super::PostLoad();
+
+	#if WITH_EDITOR
+	if (!SortID.IsValid())
+	{
+		SortID = FGuid::NewGuid();
+		MarkPackageDirty();
+	}
+	#endif
+}
+
+void UJoltPhysicsComponent::PostDuplicate(bool bDuplicateForPIE)
+{
+	Super::PostDuplicate(bDuplicateForPIE);
+
+	#if WITH_EDITOR
+	if (!bDuplicateForPIE)
+	{
+		SortID = FGuid::NewGuid();
+		MarkPackageDirty();
+	}
+	#endif
+}
+
+#if WITH_EDITOR
+void UJoltPhysicsComponent::PostEditImport()
+{
+	SortID = FGuid::NewGuid();
+	MarkPackageDirty();
+}
+#endif
+
 void UJoltPhysicsComponent::BeginPlay()
 {
 	Super::BeginPlay();
-    
+	CreateBody();
+}
+
+void UJoltPhysicsComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+	Super::EndPlay(EndPlayReason);
+
+	if (BodyID == JPH::BodyID::cInvalidBodyID) return;
+
+	if (UJoltSubsystem* JoltSubsystem = GetJoltSubsystem(GetOwner()))
+		JoltSubsystem->RemoveBodyForExternalOwner(JPH::BodyID(BodyID));
+	
+	BodyID = JPH::BodyID::cInvalidBodyID;
+}
+
+void UJoltPhysicsComponent::CreateBody()
+{
+	if (BodyID != JPH::BodyID::cInvalidBodyID) return;
 	if (!GetOwner()) return;
 
 	TArray<UStaticMeshComponent*> StaticMeshComponents;
@@ -146,12 +213,6 @@ void UJoltPhysicsComponent::BeginPlay()
 			return;
 		}
 		
-		// The benefit of the tagging system is that it sorts the actors after they're iterated -
-		// this way, each actor will be added in the same order everytime.
-		// The execution order of BeginPlay across actors isn't guaranteed, so we don't have the same luxury.
-		// If it causes issues with determinism, we can loop through all jolt physics components in AddAllJoltActors, and sort them there.
-		// For now though, this should be okay... hopefully.
-		
 		BodyID = MotionType == EJoltMotionType::Static ?
 		   JoltSubsystem->AddStaticBody(GetOwner(), Friction, Restitution, ResolvedLayer) :
 		   JoltSubsystem->AddDynamicBody(GetOwner(), Friction, Restitution, Mass, ResolvedLayer);
@@ -186,15 +247,6 @@ void UJoltPhysicsComponent::BeginPlay()
 		
 		JoltSubsystem->JoltSetEnhancedInternalEdgeRemoval(Body, bEnhancedInternalEdgeRemoval);
 	}
-}
-
-void UJoltPhysicsComponent::OnRegister()
-{
-	Super::OnRegister();
-
-	#if WITH_EDITOR
-	RecalculateMass();
-	#endif
 }
 
 void UJoltPhysicsComponent::SetObjectLayer(AActor* Actor, FName NewObjectLayer)

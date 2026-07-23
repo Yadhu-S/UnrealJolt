@@ -38,10 +38,33 @@ public:
 	UJoltPhysicsComponent();
 
 protected:
-	virtual void BeginPlay() override;
+	/** Assigns a new SortID when a fresh instance is created. */
+	virtual void OnComponentCreated() override;
+	
+	/** Recalculates mass in editor whenever the component is registered. */
 	virtual void OnRegister() override;
+
+	/** Regenerates SortID if invalid. */
+	virtual void PostLoad() override;
+	
+	/** Regenerates SortID on duplication so copies don't share the same sort identity. */
+	virtual void PostDuplicate(bool bDuplicateForPIE) override;
+
+	#if WITH_EDITOR
+	/** Regenerates SortID after in-editor actor duplication. */
+	virtual void PostEditImport() override;
+	#endif
+	
+	/** Creates body if one doesn't exist already. */
+	virtual void BeginPlay() override;
+	
+	/** Removes the body from the Jolt subsystem when the actor ends play. */
+	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 	
 public:
+	/** Called by Jolt Physics Subsystem to create the body for this component. */
+	void CreateBody();
+	
 	/** Whether this body is static (immovable, zero mass) or dynamic (simulated, affected by forces). */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Jolt Physics|Motion")
 	EJoltMotionType MotionType = EJoltMotionType::Static;
@@ -186,9 +209,13 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Jolt Physics|Helpers")
 	bool GetBodyID(int& OutBodyID) const;
 
+	/** Stable identifier used to order body creation deterministically. */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Jolt Physics|Advanced")
+	FGuid SortID;
+	
 private:
 	UPROPERTY()
-	int64 BodyID = -1;
+	int64 BodyID = JPH::BodyID::cInvalidBodyID;
 	
 	UFUNCTION()
     TArray<FString> GetObjectLayerNames() const;

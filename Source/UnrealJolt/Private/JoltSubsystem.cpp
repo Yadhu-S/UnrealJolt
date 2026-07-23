@@ -291,6 +291,7 @@ void UJoltSubsystem::AddAllJoltActors(const UWorld* World)
 {
 	TArray<const AActor*> staticActors;
 	TArray<AActor*>		  dynamicActors;
+	TArray<UJoltPhysicsComponent*> physicsComponents;
 
 	if (!World)
 	{
@@ -307,8 +308,11 @@ void UJoltSubsystem::AddAllJoltActors(const UWorld* World)
 		if (!actor)
 			continue;
 		
-		if (actor->FindComponentByClass<UJoltPhysicsComponent>())
+		if (UJoltPhysicsComponent* Component = actor->FindComponentByClass<UJoltPhysicsComponent>())
+		{
+			physicsComponents.Add(Component);
 			continue;
+		}
 
 		if (actor->ActorHasTag(joltStaticTag))
 		{
@@ -329,6 +333,11 @@ void UJoltSubsystem::AddAllJoltActors(const UWorld* World)
 	dynamicActors.Sort([](const AActor& A, const AActor& B) {
 		return A.GetName() < B.GetName();
 	});
+	
+	physicsComponents.Sort([](const UJoltPhysicsComponent& A, const UJoltPhysicsComponent& B)
+	{
+		return A.SortID < B.SortID;
+	});
 
 	for (const AActor*& staticActor : staticActors)
 	{
@@ -340,6 +349,11 @@ void UJoltSubsystem::AddAllJoltActors(const UWorld* World)
 	{
 		// FIXME: Read all this values from editor
 		AddDynamicBody(dynamicActor, 0.2f, 0.1f, 100.0f);
+	}
+	
+	for (UJoltPhysicsComponent* Component : physicsComponents)
+	{
+		Component->CreateBody();
 	}
 }
 
