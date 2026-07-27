@@ -428,6 +428,15 @@ private:
 	const JPH::BodyID* AddBodyToSimulation(const JPH::BodyID* bodyID, const JPH::BodyCreationSettings& shapeSettings, float friction, float restitution);
 
 	JPH::Body* GetBody(uint32 bodyID) const { return BodyIDBodyMap[bodyID]; }
+	
+	template<typename FuncType>
+	void WithLockedBody(JPH::BodyID BodyID, FuncType Func) const
+	{
+		if (!MainPhysicsSystem) return;
+		JPH::BodyLockWrite Lock(MainPhysicsSystem->GetBodyLockInterface(), BodyID);
+		if (!Lock.Succeeded()) return;
+		Func(Lock.GetBody());
+	}
 
 	UPROPERTY()
 	UJoltDataAsset* JoltDataAsset = nullptr;

@@ -117,7 +117,7 @@ public:
 	
 	/** Maximum linear velocity that this body can reach (cm/s) */
 	UPROPERTY(EditAnywhere, Category = "Jolt Physics|Motion", 
-		meta = (Units = "m/s", EditCondition = "MotionType != EJoltMotionType::Static"))
+		meta = (Units = "cm/s", EditCondition = "MotionType != EJoltMotionType::Static"))
 	float MaxLinearVelocity = 500.f * JOLT_TO_WORLD_SCALE;
 	
 	/** Sets the maximum linear velocity this body can reach (cm/s). */

@@ -549,9 +549,15 @@ int64 UJoltSubsystem::AddStaticBody(const AActor* Body, const float& Friction, c
 void UJoltSubsystem::ExtractPhysicsGeometry(const AActor* actor, PhysicsGeometryCallback callback)
 {
 	TInlineComponentArray<UStaticMeshComponent*, 20> Components;
-	const FTransform								 actorTransform = actor->GetActorTransform();
+	const FTransform actorTransform = actor->GetActorTransform();
+	const FTransform actorTransformInv = actorTransform.Inverse();
 
 	actor->GetComponents(UStaticMeshComponent::StaticClass(), Components);
+	TArray<TPair<JPH::RefConst<JPH::Shape>, FTransform>> CollectedShapes;
+	PhysicsGeometryCallback collect = [&CollectedShapes](JPH::RefConst<JPH::Shape> shape, const FTransform& xform) {
+		CollectedShapes.Emplace(shape, xform);
+	};
+
 	for (UStaticMeshComponent*& Comp : Components)
 	{
 		if (Comp->IsSimulatingPhysics())
@@ -559,8 +565,39 @@ void UJoltSubsystem::ExtractPhysicsGeometry(const AActor* actor, PhysicsGeometry
 			UE_LOG(JoltSubSystemLogs, Error, TEXT("'Simulate physics' turned on for : '%s' which is marked as a jolt body, disabling chaos"), *Comp->GetOwner()->GetActorNameOrLabel());
 			Comp->SetSimulatePhysics(false);
 		}
-		ExtractPhysicsGeometry(Comp, actorTransform, callback);
+
+		// We use each component's world transform so components offset relative to the actor are placed correctly once merged into a compound.
+		ExtractPhysicsGeometry(Comp, Comp->GetComponentTransform(), collect);
 	}
+
+	if (CollectedShapes.Num() == 0) return;
+
+	if (CollectedShapes.Num() == 1)
+	{
+		// Only one shape came out, so no need to create a compound shape.
+		callback(CollectedShapes[0].Key, CollectedShapes[0].Value);
+		return;
+	}
+
+	JPH::StaticCompoundShapeSettings compoundSettings;
+	for (const TPair<const JPH::RefConst<JPH::Shape>, FTransform>& ShapeXformPair : CollectedShapes)
+	{
+		const FTransform Relative = ShapeXformPair.Value * actorTransformInv;
+		compoundSettings.AddShape(
+			JoltHelpers::ToJoltVec3(Relative.GetLocation()),
+			JoltHelpers::ToJoltRot(Relative.GetRotation()),
+			ShapeXformPair.Key);
+	}
+
+	JPH::Shape::ShapeResult res = compoundSettings.Create();
+	if (!res.IsValid())
+	{
+		UE_LOG(JoltSubSystemLogs, Error, TEXT("Failed to create actor compound shape for '%s'. Error: %s"),
+			*actor->GetActorNameOrLabel(), *FString(res.GetError().c_str()));
+		return;
+	}
+
+	callback(res.Get(), actorTransform);
 }
 
 void UJoltSubsystem::ExtractPhysicsGeometry(const UStaticMeshComponent* SMC, const FTransform& actorTransform, PhysicsGeometryCallback callback)
@@ -761,7 +798,11 @@ void UJoltSubsystem::ExtractPhysicsGeometry(const FTransform& xformSoFar, const 
 	const JoltPhysicsMaterial* physicsMaterial = GetJoltPhysicsMaterial(bodySetup->GetPhysMaterial());
 
 	//  if the total makes up more than 1, we have a compound shape configured in USkeletalMeshComponent
-	if (bodySetup->AggGeom.BoxElems.Num() + bodySetup->AggGeom.SphereElems.Num() + bodySetup->AggGeom.SphylElems.Num() > 1)
+	if (bodySetup->AggGeom.BoxElems.Num() 
+		+ bodySetup->AggGeom.SphereElems.Num() 
+		+ bodySetup->AggGeom.SphylElems.Num() 
+		+ bodySetup->AggGeom.ConvexElems.Num()
+		> 1)
 	{
 		compoundShapeSettings = new JPH::StaticCompoundShapeSettings();
 	}
@@ -830,26 +871,40 @@ void UJoltSubsystem::ExtractPhysicsGeometry(const FTransform& xformSoFar, const 
 	// Convex hull
 	for (uint16 i = 0; const FKConvexElem& ConVexElem : bodySetup->AggGeom.ConvexElems)
 	{
-		const JPH::ConvexHullShape* convexHull = GetConvexHullCollisionShape(bodySetup, i, scale);
+		const JPH::ConvexHullShape* convexHull = GetConvexHullCollisionShape(bodySetup, i, scale, physicsMaterial);
 		joltShape = convexHull;
 		i++;
+
+		const FTransform ConvexElemTransform = ConVexElem.GetTransform();
 		if (compoundShapeSettings)
 		{
 			compoundShapeSettings->AddShape(
-				JoltHelpers::ToJoltVec3(ConVexElem.GetTransform().GetLocation()),
-				JoltHelpers::ToJoltRot(ConVexElem.GetTransform().GetRotation()),
+				JoltHelpers::ToJoltVec3(ConvexElemTransform.GetLocation()),
+				JoltHelpers::ToJoltRot(ConvexElemTransform.GetRotation()),
 				joltShape);
 			continue;
 		}
 
-		callback(joltShape, xformSoFar);
+		FTransform ShapeXform(ConvexElemTransform.GetRotation(), ConvexElemTransform.GetLocation());
+		FTransform XForm = ShapeXform * xformSoFar;
+		callback(joltShape, XForm);
 	}
 
 	if (compoundShapeSettings)
 	{
-		joltShape = compoundShapeSettings->Create().Get();
-		callback(joltShape, xformSoFar);
+		JPH::Shape::ShapeResult compoundRes = compoundShapeSettings->Create();
 		delete compoundShapeSettings;
+		compoundShapeSettings = nullptr;
+
+		if (!compoundRes.IsValid())
+		{
+			UE_LOG(JoltSubSystemLogs, Error, TEXT("Failed to create compound shape: %s"),
+				*FString(compoundRes.GetError().c_str()));
+			return;
+		}
+
+		joltShape = compoundRes.Get();
+		callback(joltShape, xformSoFar);
 	}
 }
 
@@ -1868,9 +1923,9 @@ void UJoltSubsystem::JoltGetPhysicsTransform(const JPH::BodyID& bodyID, FTransfo
 
 void UJoltSubsystem::JoltSetAllowedDOFs(const JPH::BodyID& bodyID, int32 allowedDOFs) const
 {
-	if (JPH::Body* body = GetBody(bodyID.GetIndexAndSequenceNumber()))
+	WithLockedBody(bodyID, [allowedDOFs](JPH::Body& body) 
 	{
-		if (JPH::MotionProperties* MotionProperties = body->GetMotionProperties())
+		if (JPH::MotionProperties* MotionProperties = body.GetMotionProperties())
 		{
 			JPH::EAllowedDOFs JoltDOFs = JPH::EAllowedDOFs::None;
 
@@ -1886,11 +1941,11 @@ void UJoltSubsystem::JoltSetAllowedDOFs(const JPH::BodyID& bodyID, int32 allowed
 			if (allowedDOFs & (int32)EJoltAllowedDOFs::TranslationZ) JoltDOFs |= JPH::EAllowedDOFs::TranslationY;
 			if (allowedDOFs & (int32)EJoltAllowedDOFs::RotationZ) JoltDOFs |= JPH::EAllowedDOFs::RotationY;
 			
-			JPH::MassProperties MassProperties = body->GetShape()->GetMassProperties();
+			JPH::MassProperties MassProperties = body.GetShape()->GetMassProperties();
 			MassProperties.ScaleToMass(1.0f / MotionProperties->GetInverseMass());
 			MotionProperties->SetMassProperties(JoltDOFs, MassProperties);
 		}
-	}
+	});
 }
 
 void UJoltSubsystem::JoltSetObjectLayer(const JPH::BodyID& bodyID, FName layer) const
@@ -1903,11 +1958,10 @@ void UJoltSubsystem::JoltSetObjectLayer(const JPH::BodyID& bodyID, FName layer) 
 
 void UJoltSubsystem::JoltSetMass(const JPH::BodyID& bodyID, const float& mass) const
 {
-	if (JPH::Body* body = GetBody(bodyID.GetIndexAndSequenceNumber()))
-	{
-		if (body->GetMotionProperties())
-		body->GetMotionProperties()->ScaleToMass(mass);
-	}
+	WithLockedBody(bodyID, [mass](JPH::Body& body) {
+		if (body.GetMotionProperties())
+		body.GetMotionProperties()->ScaleToMass(mass);
+	});
 }
 
 void UJoltSubsystem::JoltSetGravityFactor(const JPH::BodyID& bodyID, const float& gravityFactor) const
@@ -1917,10 +1971,9 @@ void UJoltSubsystem::JoltSetGravityFactor(const JPH::BodyID& bodyID, const float
 
 void UJoltSubsystem::JoltSetApplyGyroscopicForce(const JPH::BodyID& bodyID, bool bApplyGyroscopicForce) const
 {
-	if (JPH::Body* body = GetBody(bodyID.GetIndexAndSequenceNumber()))
-	{
-		body->SetApplyGyroscopicForce(bApplyGyroscopicForce);
-	}
+	WithLockedBody(bodyID, [bApplyGyroscopicForce](JPH::Body& body) {
+		body.SetApplyGyroscopicForce(bApplyGyroscopicForce);
+	});
 }
 
 void UJoltSubsystem::JoltSetMaxLinearVelocity(const JPH::BodyID& bodyID, float maxLinearVelocity) const
@@ -1950,56 +2003,54 @@ void UJoltSubsystem::JoltSetRestitution(const JPH::BodyID& bodyID, float restitu
 
 void UJoltSubsystem::JoltSetLinearDamping(const JPH::BodyID& bodyID, float linearDamping) const
 {
-	if (JPH::Body* body = GetBody(bodyID.GetIndexAndSequenceNumber()))
-	{
-		if (body->GetMotionProperties())
-		body->GetMotionProperties()->SetLinearDamping(linearDamping);
-	}
+	WithLockedBody(bodyID, [linearDamping](JPH::Body& body) {
+		if (body.GetMotionProperties())
+		body.GetMotionProperties()->SetLinearDamping(linearDamping);
+	});
 }
 
 void UJoltSubsystem::JoltSetAngularDamping(const JPH::BodyID& bodyID, float angularDamping) const
 {
-	if (JPH::Body* body = GetBody(bodyID.GetIndexAndSequenceNumber()))
-	{
-		if (body->GetMotionProperties())
-		body->GetMotionProperties()->SetAngularDamping(angularDamping);
-	}
+	WithLockedBody(bodyID, [angularDamping](JPH::Body& body) {
+		if (body.GetMotionProperties())
+		body.GetMotionProperties()->SetAngularDamping(angularDamping);
+	});
 }
 
 void UJoltSubsystem::JoltSetAllowSleeping(const JPH::BodyID& bodyID, bool bAllowSleeping) const
 {
-	if (JPH::Body* body = GetBody(bodyID.GetIndexAndSequenceNumber()))
-		body->SetAllowSleeping(bAllowSleeping);
+	WithLockedBody(bodyID, [bAllowSleeping](JPH::Body& body) {
+		body.SetAllowSleeping(bAllowSleeping);
+	});
 }
 
 void UJoltSubsystem::JoltSetNumVelocityStepsOverride(const JPH::BodyID& bodyID, int numVelocityStepsOverride) const
 {
-	if (JPH::Body* body = GetBody(bodyID.GetIndexAndSequenceNumber()))
+	WithLockedBody(bodyID, [numVelocityStepsOverride](JPH::Body& body)
 	{
-		if (JPH::MotionProperties* MotionProperties = body->GetMotionProperties())
+		if (JPH::MotionProperties* MotionProperties = body.GetMotionProperties())
 		{
 			MotionProperties->SetNumVelocityStepsOverride(numVelocityStepsOverride);
 		}
-	}
+	});
 }
 
 void UJoltSubsystem::JoltSetNumPositionStepsOverride(const JPH::BodyID& bodyID, int numPositionStepsOverride) const
 {
-	if (JPH::Body* body = GetBody(bodyID.GetIndexAndSequenceNumber()))
+	WithLockedBody(bodyID, [numPositionStepsOverride](JPH::Body& body)
 	{
-		if (JPH::MotionProperties* MotionProperties = body->GetMotionProperties())
+		if (JPH::MotionProperties* MotionProperties = body.GetMotionProperties())
 		{
 			MotionProperties->SetNumPositionStepsOverride(numPositionStepsOverride);
 		}
-	}
+	});
 }
 
 void UJoltSubsystem::JoltSetEnhancedInternalEdgeRemoval(const JPH::BodyID& bodyID, bool bEnhancedInternalEdgeRemoval) const
 {
-	if (JPH::Body* body = GetBody(bodyID.GetIndexAndSequenceNumber()))
-	{
-		body->SetEnhancedInternalEdgeRemoval(bEnhancedInternalEdgeRemoval);
-	}
+	WithLockedBody(bodyID, [bEnhancedInternalEdgeRemoval](JPH::Body& body) {
+		body.SetEnhancedInternalEdgeRemoval(bEnhancedInternalEdgeRemoval);
+	});
 }
 
 void UJoltSubsystem::JoltAddCentralImpulse(const JPH::BodyID& bodyID, const FVector& impulse) const
