@@ -51,6 +51,27 @@ Plugin that brings [Jolt Physics](https://github.com/jrouwe/JoltPhysics) into un
   - ![Options](Resources/Screenshots/SS_SkelMeshOpt.png)
   - Adjust the "Visual Offset" to align the visual mesh with the physics body
 
+### UJoltPhysicsComponent
+- `UJoltPhysicsComponent` is a component alternative to the `jolt-static` / `jolt-dynamic` actor-tag workflow. Add it to any actor to get per-actor control over physics properties.
+- Automatically creates its Jolt body on `BeginPlay` (or when the subsystem processes all actors at world start).
+  - ![PhysicsComponent](Resources/Screenshots/SS_UJoltPhysicsComponent.png)
+- **Motion Type**: `Static` or `Dynamic`. Note there's no runtime setter for this.
+- **Layer**: pick the Jolt object layer this body collides on. Defaults to `Default`, which resolves to the project's default layer for the selected Motion Type (configured under **Project Settings > Plugins > Jolt > Layers**).
+- **Allowed DOFs**: bitmask restricting which translation/rotation axes the body simulates on (e.g. lock rotation, or constrain to 2D movement). Only applies to non-static bodies.
+- **Mass**: auto-computed from collision geometry and physical material by default; enable **Override Mass** to set a fixed value in kg.
+- **Gravity Factor**: per-body multiplier on world gravity.
+- **Apply Gyroscopic Force**: simulates [gyroscopic torque](https://en.wikipedia.org/wiki/Tennis_racket_theorem) so spinning bodies resist changes to their spin axis.
+- **Max Linear / Angular Velocity**: velocity caps for the body.
+- **Friction** / **Restitution**: surface properties for this body.
+- **Linear / Angular Damping**: drag applied to linear and angular motion.
+- **Allow Sleeping**: whether the body can go to sleep when at rest.
+- **Num Velocity / Position Steps Override**: per-body solver iteration overrides (0 = use project default).
+- **Enhanced Internal Edge Removal**: extra effort to [remove ghost collisions](https://jrouwe.github.io/JoltPhysicsDocs/5.2.0/index.html#ghost-collisions) on internal mesh edges, at a performance cost.
+
+- All of the above (aside from Motion Type) are also exposed as Blueprint-callable static functions (e.g. `SetMass`, `SetFriction`, `SetGravityFactor`, `SetAllowSleeping`, etc.) that take the owning `AActor` directly, so you can adjust physics properties at runtime from Blueprints.
+
+![SS_JoltPhysicsComponentHelpers.png](Resources/Screenshots/SS_JoltPhysicsComponentHelpers.png)
+
 ### Heightmaps 
 
  ![Landscape](Resources/Screenshots/SS_Landscape.png)
