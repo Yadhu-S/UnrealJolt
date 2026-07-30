@@ -1,5 +1,7 @@
 #include "JoltDebugRenderer.h"
 
+#ifdef JPH_DEBUG_RENDERER
+
 #include "DrawDebugHelpers.h"
 
 bool UEJoltDebugRenderer::EnsureWorld()
@@ -147,3 +149,5 @@ void UEJoltDebugRenderer::DrawText3D(JPH::RVec3Arg inPosition, const JPH::string
 
 	DrawDebugString(World, Position, TextString, nullptr, Color, -1.0f, false, height);
 }
+
+#endif // JPH_DEBUG_RENDERER
