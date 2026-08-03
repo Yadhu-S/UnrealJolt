@@ -19,7 +19,7 @@ Plugin that brings [Jolt Physics](https://github.com/jrouwe/JoltPhysics) into un
 
 ### Requirements
 
-- Unreal engine 5.7.4 (Might work on older versions)
+- Unreal engine 5.8.1 (Might work on older versions)
 
 ### Installation
 
@@ -56,19 +56,21 @@ Plugin that brings [Jolt Physics](https://github.com/jrouwe/JoltPhysics) into un
 - Automatically creates its Jolt body on `BeginPlay` (or when the subsystem processes all actors at world start).
   - ![PhysicsComponent](Resources/Screenshots/SS_UJoltPhysicsComponent.png)
 - **Motion Type**: `Static` or `Dynamic`. Note there's no runtime setter for this.
-- **Layer**: pick the Jolt object layer this body collides on. Defaults to `Default`, which resolves to the project's default layer for the selected Motion Type (configured under **Project Settings > Plugins > Jolt > Layers**).
+- **Layer**: pick the Jolt object layer this body collides on. Defaults to `Default`, which resolves to the project's default layer for the selected Motion Type (configured under **Project Settings > Plugins > Jolt > Layers**). Changing Motion Type resets it to `Default`. The two default layers themselves aren't offered by name — picking one would freeze the body on that layer and it would stop following Motion Type, which on a placed instance silently survives later edits to the Blueprint.
 - **Allowed DOFs**: bitmask restricting which translation/rotation axes the body simulates on (e.g. lock rotation, or constrain to 2D movement). Only applies to non-static bodies.
-- **Mass**: auto-computed from collision geometry and physical material by default; enable **Override Mass** to set a fixed value in kg.
+- **Mass**: auto-computed from the owner's static meshes (collision geometry and physical material) at body creation; enable **Override Mass** to author a fixed value in kg instead. **Computed Mass** below it previews what the automatic calculation yields — it is display-only and never saved.
 - **Gravity Factor**: per-body multiplier on world gravity.
 - **Apply Gyroscopic Force**: simulates [gyroscopic torque](https://en.wikipedia.org/wiki/Tennis_racket_theorem) so spinning bodies resist changes to their spin axis.
-- **Max Linear / Angular Velocity**: velocity caps for the body.
+- **Max Linear / Angular Velocity**: velocity caps for the body, in Unreal units — cm/s and deg/s. (Jolt works in m/s and rad/s; the conversion happens inside the plugin.)
 - **Friction** / **Restitution**: surface properties for this body.
 - **Linear / Angular Damping**: drag applied to linear and angular motion.
-- **Allow Sleeping**: whether the body can go to sleep when at rest.
+- **Allow Sleeping**: whether the body can go to sleep when at rest. Note that a sleeping body ignores property changes until something wakes it — call `Wake Body` after changing gravity factor, damping, mass or the velocity caps on a body that has come to rest.
 - **Num Velocity / Position Steps Override**: per-body solver iteration overrides (0 = use project default).
 - **Enhanced Internal Edge Removal**: extra effort to [remove ghost collisions](https://jrouwe.github.io/JoltPhysicsDocs/5.2.0/index.html#ghost-collisions) on internal mesh edges, at a performance cost.
 
-- All of the above (aside from Motion Type) are also exposed as Blueprint-callable static functions (e.g. `SetMass`, `SetFriction`, `SetGravityFactor`, `SetAllowSleeping`, etc.) that take the owning `AActor` directly, so you can adjust physics properties at runtime from Blueprints.
+- Every static mesh on the actor contributes collision: one Jolt body is created per actor, compounding all of its meshes, not one body per mesh.
+
+- All of the above (aside from Motion Type) are also exposed as Blueprint-callable setters on the component (e.g. `SetMass`, `SetFriction`, `SetGravityFactor`, `SetAllowSleeping`, etc.), plus `GetMaxLinearVelocity` and `WakeBody`, so you can adjust physics properties at runtime from Blueprints. Grab the component with `Get Component by Class` and call the setter on it. Calling a setter before the body exists (or after the actor ends play) just updates the stored value, which `CreateBody` then applies.
 
 ![SS_JoltPhysicsComponentHelpers.png](Resources/Screenshots/SS_JoltPhysicsComponentHelpers.png)
 
@@ -103,6 +105,7 @@ To ensure deterministic simulation with Jolt Physics across platforms, follow th
  Found this project useful? Awesome!
 
  If you’ve added a feature, fixed a bug, or improved something that isn’t here yet—feel free to open a PR!
+ Note: The plugin must compile on both Linux and Windows.
 
 ---
 ## Credits

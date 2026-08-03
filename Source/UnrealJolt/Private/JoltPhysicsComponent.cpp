@@ -1,30 +1,11 @@
-﻿#include "JoltPhysicsComponent.h"
+#include "JoltPhysicsComponent.h"
 #include "JoltSubsystem.h"
 #include "PhysicsEngine/BodySetup.h"
 #include "UnrealJolt/JoltMain.h"
 
 DEFINE_LOG_CATEGORY(LogJoltPhysicsComponent);
 
-/** Gets the Jolt physics component and subsystem for an actor, validates BodyID, returns early if any are invalid. */
-#define JOLT_GET_COMPONENT_AND_SUBSYSTEM(ReturnValue) \
-if (!Actor) { UE_LOG(LogJoltPhysicsComponent, Error, \
-TEXT("%hs: Actor not found"), __FUNCTION__); return ReturnValue; } \
-UJoltPhysicsComponent* Component = Actor->GetComponentByClass<UJoltPhysicsComponent>(); \
-if (!Component) { UE_LOG(LogJoltPhysicsComponent, Error, \
-TEXT("%hs: Component not found on %s - Jolt Physics setters can only be called on actors with a Jolt Physics Component") \
-, __FUNCTION__, *Actor->GetName()); return ReturnValue; } \
-if (Component->BodyID == JPH::BodyID::cInvalidBodyID) return ReturnValue; \
-JPH::BodyID BodyID = JPH::BodyID(Component->BodyID); \
-UJoltSubsystem* Subsystem = GetJoltSubsystem(Actor); \
-if (!Subsystem) { UE_LOG(LogJoltPhysicsComponent, Error, \
-TEXT("%hs: Subsystem not found for %s") \
-, __FUNCTION__, *Actor->GetName()); return ReturnValue; }
-
-namespace
-{
-	// Resolves to the default static/dynamic layer at runtime. Just less messy than having both Static and Dynamic as options for Layer.
-	const FName DefaultLayerSentinel(TEXT("Default"));
-}
+static const FName DefaultLayerSentinel(TEXT("Default"));
 
 UJoltPhysicsComponent::UJoltPhysicsComponent()
 {
@@ -42,35 +23,38 @@ void UJoltPhysicsComponent::OnRegister()
 {
 	Super::OnRegister();
 
-	#if WITH_EDITOR
-	RecalculateMass();
-	#endif
+#if WITH_EDITOR
+	// Transient preview only. Writing an authored UPROPERTY here would be unsafe: registration also runs
+	// during PIE duplication/restore, before per-instance overrides land, so bOverrideMass can still read
+	// false and an authored Mass would be silently overwritten.
+	ComputedMass = ComputeAutoMass();
+#endif
 }
 
 void UJoltPhysicsComponent::PostLoad()
 {
 	Super::PostLoad();
 
-	#if WITH_EDITOR
+#if WITH_EDITOR
 	if (!SortID.IsValid())
 	{
 		SortID = FGuid::NewGuid();
 		MarkPackageDirty();
 	}
-	#endif
+#endif
 }
 
 void UJoltPhysicsComponent::PostDuplicate(bool bDuplicateForPIE)
 {
 	Super::PostDuplicate(bDuplicateForPIE);
 
-	#if WITH_EDITOR
+#if WITH_EDITOR
 	if (!bDuplicateForPIE)
 	{
 		SortID = FGuid::NewGuid();
 		MarkPackageDirty();
 	}
-	#endif
+#endif
 }
 
 #if WITH_EDITOR
@@ -91,286 +75,244 @@ void UJoltPhysicsComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
 	Super::EndPlay(EndPlayReason);
 
-	if (BodyID == JPH::BodyID::cInvalidBodyID) return;
+	if (BodyID == JPH::BodyID::cInvalidBodyID)
+		return;
 
-	if (UJoltSubsystem* JoltSubsystem = GetJoltSubsystem(GetOwner()))
+	if (JoltSubsystem)
 		JoltSubsystem->RemoveBodyForExternalOwner(JPH::BodyID(BodyID));
-	
+
 	BodyID = JPH::BodyID::cInvalidBodyID;
+	JoltSubsystem = nullptr;
 }
 
 void UJoltPhysicsComponent::CreateBody()
 {
-	if (BodyID != JPH::BodyID::cInvalidBodyID) return;
-	if (!GetOwner()) return;
+	if (BodyID != JPH::BodyID::cInvalidBodyID)
+		return;
+	if (!GetOwner())
+		return;
 
+	SanitizeMeshComponents();
+
+	const float BodyMass = bOverrideMass ? Mass : ComputeAutoMass();
+	if (MotionType != EJoltMotionType::Static && BodyMass <= 0.0f)
+	{
+		UE_LOG(LogJoltPhysicsComponent, Error,
+			TEXT("%hs: Failed to create body on %s, mass is zero — check its static mesh(es) have valid collision, and any mass override"),
+			__FUNCTION__, *GetOwner()->GetName());
+		return;
+	}
+
+	// Cached for the lifetime of the body: a world subsystem outlives every component in its world,
+	// and the setters rely on this being set whenever BodyID is valid.
+	JoltSubsystem = GetWorld() ? GetWorld()->GetSubsystem<UJoltSubsystem>() : nullptr;
+	if (!JoltSubsystem)
+	{
+		UE_LOG(LogJoltPhysicsComponent, Error,
+			TEXT("%hs: Failed to create body on %s, no Jolt subsystem for this world"),
+			__FUNCTION__, *GetOwner()->GetName());
+		return;
+	}
+
+	if (!JoltSubsystem->HasBodyCapacity())
+	{
+		UE_LOG(LogJoltPhysicsComponent, Error,
+			TEXT("%hs: Failed to create body on %s, at MaxBodies limit (%d)"),
+			__FUNCTION__, *GetOwner()->GetName(), GetDefault<UJoltSettings>()->MaxBodies);
+		return;
+	}
+
+	// An unknown layer, or geometry that yielded no shapes, is reported by the subsystem.
+	const FName ResolvedLayer = ResolveLayer();
+	BodyID = MotionType == EJoltMotionType::Static ? JoltSubsystem->AddStaticBody(GetOwner(), Friction, Restitution, ResolvedLayer) : JoltSubsystem->AddDynamicBody(GetOwner(), Friction, Restitution, BodyMass, ResolvedLayer);
+
+	if (BodyID == JPH::BodyID::cInvalidBodyID)
+	{
+		UE_LOG(LogJoltPhysicsComponent, Error,
+			TEXT("%hs: Failed to create body on %s"), __FUNCTION__, *GetOwner()->GetName());
+		return;
+	}
+
+	ApplyBodyProperties(JPH::BodyID(BodyID));
+}
+
+void UJoltPhysicsComponent::SanitizeMeshComponents() const
+{
 	TArray<UStaticMeshComponent*> StaticMeshComponents;
 	GetOwner()->GetComponents<UStaticMeshComponent>(StaticMeshComponents);
 
-	bool bFoundValidGeometry = false;
-	const bool bNeedsMassCalculation = MotionType == EJoltMotionType::Dynamic && !bOverrideMass;
-	float TotalMass = 0.0f;
-	
 	for (UStaticMeshComponent* StaticMeshComponent : StaticMeshComponents)
 	{
-		if (!StaticMeshComponent) continue;
-		
-		if (!StaticMeshComponent->GetStaticMesh())
-		{
-			UE_LOG(LogJoltPhysicsComponent, Warning,
-				TEXT("%hs: Skipping %s, no valid static mesh"), 
-				__FUNCTION__, *StaticMeshComponent->GetName());
+		if (!StaticMeshComponent || !StaticMeshComponent->GetStaticMesh())
 			continue;
-		}
-		
-		FString ExtractReason;
-		if (!UJoltSubsystem::IsPhysicsGeometryExtractable(StaticMeshComponent, &ExtractReason))
-		{
-			UE_LOG(LogJoltPhysicsComponent, Warning,
-				TEXT("%hs: Skipping %s, no extractable physics geometry (%s)"),
-				__FUNCTION__, *StaticMeshComponent->GetName(), *ExtractReason);
-			continue;
-		}
-		
+
 		// Dynamic bodies have to be movable, static bodies can be either.
-		if (MotionType == EJoltMotionType::Dynamic)
+		if (MotionType == EJoltMotionType::Dynamic && StaticMeshComponent->GetMobility() != EComponentMobility::Movable)
 		{
-			if (StaticMeshComponent->GetMobility() != EComponentMobility::Movable)
-			{
-				UE_LOG(LogJoltPhysicsComponent, Warning,
-					TEXT("%hs: Component mobility for %s is movable, when %s's Jolt Physics Component is set to dynamic motion type, setting mobility to movable"), 
-					__FUNCTION__, *StaticMeshComponent->GetName(), *GetOwner()->GetName());
-				StaticMeshComponent->SetMobility(EComponentMobility::Movable);
-			}
+			UE_LOG(LogJoltPhysicsComponent, Warning,
+				TEXT("%hs: %s is not movable but %s's Jolt Physics Component is dynamic, setting mobility to movable"),
+				__FUNCTION__, *StaticMeshComponent->GetName(), *GetOwner()->GetName());
+			StaticMeshComponent->SetMobility(EComponentMobility::Movable);
 		}
 
-		// Bodies need to have simulate physics turned off. 
-		if (UPrimitiveComponent* PrimitiveComponent = Cast<UPrimitiveComponent>(StaticMeshComponent))
+		// Bodies need to have simulate physics turned off.
+		if (StaticMeshComponent->IsSimulatingPhysics())
 		{
-			if (PrimitiveComponent->IsSimulatingPhysics())
-			{
-				UE_LOG(LogJoltPhysicsComponent, Warning,
-					TEXT("%hs: 'Simulate physics' turned on for component %s, disabling chaos"), 
-					__FUNCTION__, *PrimitiveComponent->GetName());
-				PrimitiveComponent->SetSimulatePhysics(false);
-			}
+			UE_LOG(LogJoltPhysicsComponent, Warning,
+				TEXT("%hs: 'Simulate physics' turned on for component %s, disabling chaos"),
+				__FUNCTION__, *StaticMeshComponent->GetName());
+			StaticMeshComponent->SetSimulatePhysics(false);
 		}
-		
-		if (bNeedsMassCalculation)
-		{
-			if (const UBodySetup* BodySetup = StaticMeshComponent->GetBodySetup())
-			{
-				if (const float ComputedMass = BodySetup->CalculateMass(StaticMeshComponent); ComputedMass > 0.0f)
-				{
-					TotalMass += ComputedMass;
-				}
-			}
-		}
-		
-		bFoundValidGeometry = true;
 	}
-	
-	if (!bFoundValidGeometry)
+}
+
+void UJoltPhysicsComponent::ApplyBodyProperties(const JPH::BodyID& Body) const
+{
+	// Not a massive fan of this, I feel like it would be more appropriate to pass it through AddStatic/DynamicBody.
+	// Maybe pass a struct through them instead of a billion parameters - but that would be a decently sized change.
+	if (MotionType != EJoltMotionType::Static)
 	{
-		UE_LOG(LogJoltPhysicsComponent, Error,
-			TEXT("%hs: %s has no valid geometry to simulate via Jolt Physics"), __FUNCTION__, *GetOwner()->GetName());
-		return;
+		JoltSubsystem->JoltSetAllowedDOFs(Body, AllowedDOFs);
+		JoltSubsystem->JoltSetGravityFactor(Body, GravityFactor);
+		JoltSubsystem->JoltSetApplyGyroscopicForce(Body, bApplyGyroscopicForce);
+		JoltSubsystem->JoltSetMaxLinearVelocity(Body, MaxLinearVelocity);
+		JoltSubsystem->JoltSetMaxAngularVelocity(Body, MaxAngularVelocity);
+		JoltSubsystem->JoltSetLinearDamping(Body, LinearDamping);
+		JoltSubsystem->JoltSetAngularDamping(Body, AngularDamping);
+		JoltSubsystem->JoltSetAllowSleeping(Body, bAllowSleeping);
+
+		// 0 means unset, so skip the override and let Jolt use its default
+		if (NumVelocityStepsOverride != 0)
+			JoltSubsystem->JoltSetNumVelocityStepsOverride(Body, NumVelocityStepsOverride);
+		if (NumPositionStepsOverride != 0)
+			JoltSubsystem->JoltSetNumPositionStepsOverride(Body, NumPositionStepsOverride);
 	}
-	
-	if (bNeedsMassCalculation)
-	{
-		if (TotalMass > 0.0f) Mass = TotalMass;
-		else UE_LOG(LogJoltPhysicsComponent, Error,
-			TEXT("%hs: %s computed a mass of zero, ensure its static mesh(es) have valid collision, and check for a zero mass override"), __FUNCTION__, *GetOwner()->GetName());
-	}
-	
-	if (UJoltSubsystem* JoltSubsystem = GetJoltSubsystem(GetOwner()))
-	{
-		const FName ResolvedLayer = ResolveLayer();
-		
-		if (JoltSubsystem->GetObjectLayerByName(ResolvedLayer) == INDEX_NONE)
-		{
-			UE_LOG(LogJoltPhysicsComponent, Error,
-				TEXT("%hs: Failed to create body on %s, object layer '%s' is not valid"),
-				__FUNCTION__, *GetOwner()->GetName(), *ResolvedLayer.ToString());
-			return;
-		}
-		
-		if (!JoltSubsystem->HasBodyCapacity())
-		{
-			if (const UJoltSettings* Settings = GetDefault<UJoltSettings>())
-			{
-				UE_LOG(LogJoltPhysicsComponent, Error,
-					TEXT("%hs: Failed to create body on %s, at MaxBodies limit (%d)"),
-					__FUNCTION__, *GetOwner()->GetName(), Settings->MaxBodies);
-			} 
-			else
-			{
-				UE_LOG(LogJoltPhysicsComponent, Error,
-					TEXT("%hs: Failed to create body on %s"),
-					__FUNCTION__, *GetOwner()->GetName());
-			}
-			return;
-		}
-		
-		BodyID = MotionType == EJoltMotionType::Static ?
-		   JoltSubsystem->AddStaticBody(GetOwner(), Friction, Restitution, ResolvedLayer) :
-		   JoltSubsystem->AddDynamicBody(GetOwner(), Friction, Restitution, Mass, ResolvedLayer);
-		
-		if (BodyID == JPH::BodyID::cInvalidBodyID)
-		{
-			UE_LOG(LogJoltPhysicsComponent, Error,
-				TEXT("%hs: Failed to create body on %s")
-				, __FUNCTION__, *GetOwner()->GetName());
-			return;
-		}
-		
-		const JPH::BodyID& Body = JPH::BodyID(BodyID);
-		
-		// Not a massive fan of this, I feel like it would be more appropriate to pass it through AddStatic/DynamicBody.
-		// Maybe pass a struct through them instead of a billion parameters - but that would be a decently sized change. 
-		if (MotionType != EJoltMotionType::Static)
-		{
-			JoltSubsystem->JoltSetAllowedDOFs(Body, AllowedDOFs);
-			JoltSubsystem->JoltSetGravityFactor(Body, GravityFactor);
-			JoltSubsystem->JoltSetApplyGyroscopicForce(Body, bApplyGyroscopicForce);
-			JoltSubsystem->JoltSetMaxLinearVelocity(Body, MaxLinearVelocity);
-			JoltSubsystem->JoltSetMaxAngularVelocity(Body, MaxAngularVelocity);
-			JoltSubsystem->JoltSetLinearDamping(Body, LinearDamping);
-			JoltSubsystem->JoltSetAngularDamping(Body, AngularDamping);
-			JoltSubsystem->JoltSetAllowSleeping(Body, bAllowSleeping);
 
-			// 0 means unset, so skip the override and let Jolt use its default
-			if (NumVelocityStepsOverride != 0) JoltSubsystem->JoltSetNumVelocityStepsOverride(Body, NumVelocityStepsOverride);
-			if (NumPositionStepsOverride != 0) JoltSubsystem->JoltSetNumPositionStepsOverride(Body, NumPositionStepsOverride);
-		}
-		
-		JoltSubsystem->JoltSetEnhancedInternalEdgeRemoval(Body, bEnhancedInternalEdgeRemoval);
-	}
+	JoltSubsystem->JoltSetEnhancedInternalEdgeRemoval(Body, bEnhancedInternalEdgeRemoval);
 }
 
-void UJoltPhysicsComponent::SetObjectLayer(AActor* Actor, FName NewObjectLayer)
+void UJoltPhysicsComponent::SetObjectLayer(FName NewObjectLayer)
 {
-	JOLT_GET_COMPONENT_AND_SUBSYSTEM()
-	
-	Component->Layer = NewObjectLayer;
-	Subsystem->JoltSetObjectLayer(BodyID, Component->ResolveLayer());
+	Layer = NewObjectLayer;
+	if (HasBody())
+		JoltSubsystem->JoltSetObjectLayer(JPH::BodyID(BodyID), ResolveLayer());
 }
 
-void UJoltPhysicsComponent::SetMass(AActor* Actor, const float NewMass)
+FName UJoltPhysicsComponent::ResolveLayer() const
 {
-	JOLT_GET_COMPONENT_AND_SUBSYSTEM()
+	if (Layer != DefaultLayerSentinel && !Layer.IsNone())
+		return Layer;
 
-	Component->Mass = NewMass;
-	Subsystem->JoltSetMass(BodyID, NewMass);
+	const UJoltSettings* Settings = GetDefault<UJoltSettings>();
+	if (!Settings)
+		return NAME_None;
+
+	return (MotionType == EJoltMotionType::Static) ? Settings->DefaultStaticLayer : Settings->DefaultDynamicLayer;
 }
 
-void UJoltPhysicsComponent::SetGravityFactor(AActor* Actor, float NewGravityFactor)
+void UJoltPhysicsComponent::SetMass(const float NewMass)
 {
-	JOLT_GET_COMPONENT_AND_SUBSYSTEM()
-
-	Component->GravityFactor = NewGravityFactor;
-	Subsystem->JoltSetGravityFactor(BodyID, NewGravityFactor);
+	Mass = NewMass;
+	if (HasBody())
+		JoltSubsystem->JoltSetMass(JPH::BodyID(BodyID), NewMass);
 }
 
-void UJoltPhysicsComponent::SetApplyGyroscopicForce(AActor* Actor, bool bNewApplyGyroscopicForce)
+void UJoltPhysicsComponent::SetGravityFactor(float NewGravityFactor)
 {
-	JOLT_GET_COMPONENT_AND_SUBSYSTEM()
-	
-	Component->bApplyGyroscopicForce = bNewApplyGyroscopicForce;
-	Subsystem->JoltSetApplyGyroscopicForce(BodyID, bNewApplyGyroscopicForce);
+	GravityFactor = NewGravityFactor;
+	if (HasBody())
+		JoltSubsystem->JoltSetGravityFactor(JPH::BodyID(BodyID), NewGravityFactor);
 }
 
-void UJoltPhysicsComponent::SetMaxLinearVelocity(AActor* Actor, float NewMaxLinearVelocity)
+void UJoltPhysicsComponent::SetApplyGyroscopicForce(bool bNewApplyGyroscopicForce)
 {
-	JOLT_GET_COMPONENT_AND_SUBSYSTEM()
-	
-	Component->MaxLinearVelocity = NewMaxLinearVelocity;
-	Subsystem->JoltSetMaxLinearVelocity(BodyID, NewMaxLinearVelocity);
+	bApplyGyroscopicForce = bNewApplyGyroscopicForce;
+	if (HasBody())
+		JoltSubsystem->JoltSetApplyGyroscopicForce(JPH::BodyID(BodyID), bNewApplyGyroscopicForce);
 }
 
-float UJoltPhysicsComponent::GetMaxLinearVelocity(AActor* Actor)
+void UJoltPhysicsComponent::SetMaxLinearVelocity(float NewMaxLinearVelocity)
 {
-	JOLT_GET_COMPONENT_AND_SUBSYSTEM(-1)
-
-	return Subsystem->JoltGetMaxLinearVelocity(BodyID);
+	MaxLinearVelocity = NewMaxLinearVelocity;
+	if (HasBody())
+		JoltSubsystem->JoltSetMaxLinearVelocity(JPH::BodyID(BodyID), NewMaxLinearVelocity);
 }
 
-void UJoltPhysicsComponent::SetMaxAngularVelocity(AActor* Actor, float NewMaxAngularVelocity)
+float UJoltPhysicsComponent::GetMaxLinearVelocity() const
 {
-	JOLT_GET_COMPONENT_AND_SUBSYSTEM()
+	if (!HasBody())
+		return MaxLinearVelocity;
 
-	Component->MaxAngularVelocity = NewMaxAngularVelocity;
-	Subsystem->JoltSetMaxAngularVelocity(BodyID, NewMaxAngularVelocity);
+	return JoltSubsystem->JoltGetMaxLinearVelocity(JPH::BodyID(BodyID));
 }
 
-void UJoltPhysicsComponent::SetFriction(AActor* Actor, const float NewFriction)
+void UJoltPhysicsComponent::SetMaxAngularVelocity(float NewMaxAngularVelocity)
 {
-	JOLT_GET_COMPONENT_AND_SUBSYSTEM()
-
-	Component->Friction = NewFriction;
-	Subsystem->JoltSetFriction(BodyID, NewFriction);
+	MaxAngularVelocity = NewMaxAngularVelocity;
+	if (HasBody())
+		JoltSubsystem->JoltSetMaxAngularVelocity(JPH::BodyID(BodyID), NewMaxAngularVelocity);
 }
 
-void UJoltPhysicsComponent::SetRestitution(AActor* Actor, const float NewRestitution)
+void UJoltPhysicsComponent::SetFriction(const float NewFriction)
 {
-	JOLT_GET_COMPONENT_AND_SUBSYSTEM()
-
-	Component->Restitution = NewRestitution;
-	Subsystem->JoltSetRestitution(BodyID, NewRestitution);
+	Friction = NewFriction;
+	if (HasBody())
+		JoltSubsystem->JoltSetFriction(JPH::BodyID(BodyID), NewFriction);
 }
 
-void UJoltPhysicsComponent::SetLinearDamping(AActor* Actor, float NewLinearDamping)
+void UJoltPhysicsComponent::SetRestitution(const float NewRestitution)
 {
-	JOLT_GET_COMPONENT_AND_SUBSYSTEM()
-
-	Component->LinearDamping = NewLinearDamping;
-	Subsystem->JoltSetLinearDamping(BodyID, NewLinearDamping);
+	Restitution = NewRestitution;
+	if (HasBody())
+		JoltSubsystem->JoltSetRestitution(JPH::BodyID(BodyID), NewRestitution);
 }
 
-void UJoltPhysicsComponent::SetAngularDamping(AActor* Actor, float NewAngularDamping)
+void UJoltPhysicsComponent::SetLinearDamping(float NewLinearDamping)
 {
-	JOLT_GET_COMPONENT_AND_SUBSYSTEM()
-
-	Component->AngularDamping = NewAngularDamping;
-	Subsystem->JoltSetAngularDamping(BodyID, NewAngularDamping);
+	LinearDamping = NewLinearDamping;
+	if (HasBody())
+		JoltSubsystem->JoltSetLinearDamping(JPH::BodyID(BodyID), NewLinearDamping);
 }
 
-void UJoltPhysicsComponent::SetAllowSleeping(AActor* Actor, bool bNewAllowSleeping)
+void UJoltPhysicsComponent::SetAngularDamping(float NewAngularDamping)
 {
-	JOLT_GET_COMPONENT_AND_SUBSYSTEM()
-	
-	Component->bAllowSleeping = bNewAllowSleeping;
-	Subsystem->JoltSetAllowSleeping(BodyID, bNewAllowSleeping);
+	AngularDamping = NewAngularDamping;
+	if (HasBody())
+		JoltSubsystem->JoltSetAngularDamping(JPH::BodyID(BodyID), NewAngularDamping);
 }
 
-void UJoltPhysicsComponent::SetNumVelocityStepsOverride(AActor* Actor, int NewNumVelocityStepsOverride)
+void UJoltPhysicsComponent::SetAllowSleeping(bool bNewAllowSleeping)
 {
-	JOLT_GET_COMPONENT_AND_SUBSYSTEM()
-
-	Component->NumVelocityStepsOverride = NewNumVelocityStepsOverride;
-	Subsystem->JoltSetNumVelocityStepsOverride(BodyID, NewNumVelocityStepsOverride);
+	bAllowSleeping = bNewAllowSleeping;
+	if (HasBody())
+		JoltSubsystem->JoltSetAllowSleeping(JPH::BodyID(BodyID), bNewAllowSleeping);
 }
 
-void UJoltPhysicsComponent::SetNumPositionStepsOverride(AActor* Actor, int NewNumPositionStepsOverride) 
+void UJoltPhysicsComponent::SetNumVelocityStepsOverride(int NewNumVelocityStepsOverride)
 {
-	JOLT_GET_COMPONENT_AND_SUBSYSTEM()
-
-	Component->NumPositionStepsOverride = NewNumPositionStepsOverride;
-	Subsystem->JoltSetNumPositionStepsOverride(BodyID, NewNumPositionStepsOverride);
+	NumVelocityStepsOverride = NewNumVelocityStepsOverride;
+	if (HasBody())
+		JoltSubsystem->JoltSetNumVelocityStepsOverride(JPH::BodyID(BodyID), NewNumVelocityStepsOverride);
 }
 
-void UJoltPhysicsComponent::SetEnhancedInternalEdgeRemoval(AActor* Actor, bool bNewEnhancedInternalEdgeRemoval) 
+void UJoltPhysicsComponent::SetNumPositionStepsOverride(int NewNumPositionStepsOverride)
 {
-	JOLT_GET_COMPONENT_AND_SUBSYSTEM()
+	NumPositionStepsOverride = NewNumPositionStepsOverride;
+	if (HasBody())
+		JoltSubsystem->JoltSetNumPositionStepsOverride(JPH::BodyID(BodyID), NewNumPositionStepsOverride);
+}
 
-	Component->bEnhancedInternalEdgeRemoval = bNewEnhancedInternalEdgeRemoval;
-	Subsystem->JoltSetEnhancedInternalEdgeRemoval(BodyID, bNewEnhancedInternalEdgeRemoval);
+void UJoltPhysicsComponent::SetEnhancedInternalEdgeRemoval(bool bNewEnhancedInternalEdgeRemoval)
+{
+	bEnhancedInternalEdgeRemoval = bNewEnhancedInternalEdgeRemoval;
+	if (HasBody())
+		JoltSubsystem->JoltSetEnhancedInternalEdgeRemoval(JPH::BodyID(BodyID), bNewEnhancedInternalEdgeRemoval);
 }
 
 bool UJoltPhysicsComponent::GetBodyID(int& OutBodyID) const
 {
-	if (BodyID == JPH::BodyID::cInvalidBodyID) return false;
+	if (BodyID == JPH::BodyID::cInvalidBodyID)
+		return false;
 	OutBodyID = BodyID;
 	return true;
 }
@@ -378,61 +320,60 @@ bool UJoltPhysicsComponent::GetBodyID(int& OutBodyID) const
 TArray<FString> UJoltPhysicsComponent::GetObjectLayerNames() const
 {
 	const UJoltSettings* Settings = GetDefault<UJoltSettings>();
-	if (!Settings) return {};
+	if (!Settings)
+		return {};
 
 	const FName ThisMotionTypeDefault = (MotionType == EJoltMotionType::Static) ? Settings->DefaultStaticLayer : Settings->DefaultDynamicLayer;
 	const FName OtherMotionTypeDefault = (MotionType == EJoltMotionType::Static) ? Settings->DefaultDynamicLayer : Settings->DefaultStaticLayer;
 
 	TArray<FString> Names;
-	Names.Reserve(Settings->ObjectLayers.Num());
+	Names.Reserve(Settings->ObjectLayers.Num() + 1);
+
+	Names.Add(DefaultLayerSentinel.ToString());
 	for (const FJoltObjectLayer& ObjLayer : Settings->ObjectLayers)
 	{
-		// Hide the other MotionType's default layer. That way "Static" doesn't show up when MotionType is "Dynamic", and vice-versa.
-		if (ObjLayer.Name.IsNone() || ObjLayer.Name == OtherMotionTypeDefault) continue;
-		
-		// Show default instead of the real layer name. It'll always reflect the sentinel value, so it won't go stale if we change the default layer.
-		Names.Add(ObjLayer.Name == ThisMotionTypeDefault ? DefaultLayerSentinel.ToString() : ObjLayer.Name.ToString());
+		// Both defaults sit behind the "Default" entry above: picking the concrete name would freeze the
+		// layer against later MotionType changes, and the other MotionType's default is never valid here.
+		if (ObjLayer.Name.IsNone() || ObjLayer.Name == OtherMotionTypeDefault || ObjLayer.Name == ThisMotionTypeDefault)
+			continue;
+
+		Names.Add(ObjLayer.Name.ToString());
 	}
 	return Names;
 }
 
-FName UJoltPhysicsComponent::ResolveLayer() const
+float UJoltPhysicsComponent::ComputeAutoMass() const
 {
-	if (Layer != DefaultLayerSentinel) return Layer;
+	if (!GetOwner())
+		return 0.0f;
 
-	const UJoltSettings* Settings = GetDefault<UJoltSettings>();
-	if (!Settings) return Layer;
-
-	return (MotionType == EJoltMotionType::Static) ? Settings->DefaultStaticLayer : Settings->DefaultDynamicLayer;
-}
-
-void UJoltPhysicsComponent::RecalculateMass()
-{
-	// Static bodies don't use mass at all, and bOverrideMass means the user is hand-authoring mass.
-	if (MotionType == EJoltMotionType::Static || bOverrideMass || !GetOwner()) return;
-
-	TArray<UPrimitiveComponent*> PrimitiveComponents;
-	GetOwner()->GetComponents<UPrimitiveComponent>(PrimitiveComponents);
+	// Static meshes only: they're the sole source of geometry for the Jolt body, so anything
+	// else with a BodySetup (shape components, etc.) would add mass the body doesn't represent.
+	TArray<UStaticMeshComponent*> StaticMeshComponents;
+	GetOwner()->GetComponents<UStaticMeshComponent>(StaticMeshComponents);
 
 	float TotalMass = 0.0f;
-	for (UPrimitiveComponent* PrimitiveComponent : PrimitiveComponents)
+	for (UStaticMeshComponent* StaticMeshComponent : StaticMeshComponents)
 	{
-		if (!PrimitiveComponent) continue;
+		if (!StaticMeshComponent)
+			continue;
 
-		if (const UBodySetup* BodySetup = PrimitiveComponent->GetBodySetup())
+		if (const UBodySetup* BodySetup = StaticMeshComponent->GetBodySetup())
 		{
-			if (const float ComputedMass = BodySetup->CalculateMass(PrimitiveComponent); ComputedMass > 0.0f)
+			if (const float ElementMass = BodySetup->CalculateMass(StaticMeshComponent); ElementMass > 0.0f)
 			{
-				TotalMass += ComputedMass;
+				TotalMass += ElementMass;
 			}
 		}
 	}
 
-	if (TotalMass > 0.0f) 
-		Mass = TotalMass;
-	else 
-		UE_LOG(LogJoltPhysicsComponent, Error,
-		TEXT("%hs: %s computed a mass of zero, ensure its static mesh(es) have valid collision, and check for a zero mass override"), __FUNCTION__, *GetOwner()->GetName());
+	return TotalMass;
+}
+
+void UJoltPhysicsComponent::WakeBody() const
+{
+	if (HasBody())
+		JoltSubsystem->JoltActivateBody(JPH::BodyID(BodyID));
 }
 
 #if WITH_EDITOR
@@ -440,18 +381,20 @@ void UJoltPhysicsComponent::PostEditChangeProperty(FPropertyChangedEvent& Proper
 {
 	Super::PostEditChangeProperty(PropertyChangedEvent);
 
-	if (PropertyChangedEvent.Property == nullptr) return;
+	if (PropertyChangedEvent.Property == nullptr)
+		return;
 
 	const FName ChangedProp = PropertyChangedEvent.Property->GetFName();
 
 	if (ChangedProp == GET_MEMBER_NAME_CHECKED(UJoltPhysicsComponent, MotionType))
 	{
-		// Static/Dynamic have different default layers, so fall back to the sentinel
+		// Back to the sentinel, never the concrete name: a written name becomes a per-instance override,
+		// so a later MotionType change on a Blueprint could no longer reach placed instances.
 		Layer = DefaultLayerSentinel;
 	}
 	else if (ChangedProp == GET_MEMBER_NAME_CHECKED(UJoltPhysicsComponent, bOverrideMass))
 	{
-		RecalculateMass();
+		ComputedMass = ComputeAutoMass();
 	}
 }
 #endif

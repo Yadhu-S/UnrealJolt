@@ -256,6 +256,13 @@ public:
 	
 	UFUNCTION(BlueprintCallable, Category = "Jolt Physics", BlueprintPure = false)
 	void JoltSetEnhancedInternalEdgeRemoval(const int64& bodyID, bool bEnhancedInternalEdgeRemoval) const;
+
+	/*
+	 * Wakes a sleeping body. Jolt sleeps bodies that come to rest, and property changes
+	 * (gravity factor, damping, mass, velocity limits) do not wake them on their own.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Jolt Physics", BlueprintPure = false)
+	void JoltActivateBody(const int64& bodyID) const;
 	
 	UFUNCTION(BlueprintCallable, Category = "Jolt Physics")
 	void SetTimeScale(double deltaTime);
@@ -336,6 +343,8 @@ public:
 	void JoltSetNumPositionStepsOverride(const JPH::BodyID& bodyID, int numPositionStepsOverride) const;
 	
 	void JoltSetEnhancedInternalEdgeRemoval(const JPH::BodyID& bodyID, bool bEnhancedInternalEdgeRemoval) const;
+
+	void JoltActivateBody(const JPH::BodyID& bodyID) const;
 	
 	// This will first perform a broadphase, and then a narrow phase query
 	void RayCastNarrowPhase(const FVector& start, const FVector& end, NarrowPhaseQueryCallback& hitCallback, const JPH::BodyFilter& bodyFilter = {}) const;
@@ -615,23 +624,8 @@ public:
 		return MainPhysicsSystem->GetNumBodies();
 	}
 
-	static bool IsPhysicsGeometryExtractable(const UStaticMeshComponent* SMC, FString* OutReason = nullptr);
-
 	bool HasBodyCapacity() const;
 	
 	friend class UJoltSkeletalMeshComponent;
 	friend class JoltAxisConstraint;
 };
-
-inline UJoltSubsystem* GetJoltSubsystem(const UObject* WorldContextObject)
-{
-	if (WorldContextObject)
-	{
-		if (UWorld* World = GEngine->GetWorldFromContextObject(WorldContextObject, EGetWorldErrorMode::ReturnNull))
-		{
-			return World->GetSubsystem<UJoltSubsystem>();
-		}
-	}
-	
-	return nullptr;
-}
