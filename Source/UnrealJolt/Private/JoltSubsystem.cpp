@@ -15,6 +15,7 @@
 #include "UObject/WeakObjectPtrTemplates.h"
 #include "UnrealJolt/Helpers.h"
 #include "JoltFilters.h"
+#include "JoltPhysicsComponent.h"
 #include "Engine/Engine.h"
 #include "Landscape.h"
 #include "LandscapeComponent.h"
@@ -287,8 +288,9 @@ void UJoltSubsystem::OnWorldBeginPlay(UWorld& InWorld)
 
 void UJoltSubsystem::AddAllJoltActors(const UWorld* World)
 {
-	TArray<const AActor*> staticActors;
-	TArray<AActor*>		  dynamicActors;
+	TArray<const AActor*>		   staticActors;
+	TArray<AActor*>				   dynamicActors;
+	TArray<UJoltPhysicsComponent*> physicsComponents;
 
 	if (!World)
 	{
@@ -304,6 +306,12 @@ void UJoltSubsystem::AddAllJoltActors(const UWorld* World)
 		AActor* actor = *actorItr;
 		if (!actor)
 			continue;
+
+		if (UJoltPhysicsComponent* Component = actor->FindComponentByClass<UJoltPhysicsComponent>())
+		{
+			physicsComponents.Add(Component);
+			continue;
+		}
 
 		if (actor->ActorHasTag(joltStaticTag))
 		{
@@ -325,6 +333,10 @@ void UJoltSubsystem::AddAllJoltActors(const UWorld* World)
 		return A.GetName() < B.GetName();
 	});
 
+	physicsComponents.Sort([](const UJoltPhysicsComponent& A, const UJoltPhysicsComponent& B) {
+		return A.SortID < B.SortID;
+	});
+
 	for (const AActor*& staticActor : staticActors)
 	{
 		// FIXME: read friction and restitution from the physics material
@@ -335,6 +347,11 @@ void UJoltSubsystem::AddAllJoltActors(const UWorld* World)
 	{
 		// FIXME: Read all this values from editor
 		AddDynamicBody(dynamicActor, 0.2f, 0.1f, 100.0f);
+	}
+
+	for (UJoltPhysicsComponent* Component : physicsComponents)
+	{
+		Component->CreateBody();
 	}
 }
 
@@ -498,12 +515,11 @@ void UJoltSubsystem::InitPhysicsSystem(
 int64 UJoltSubsystem::AddDynamicBody(AActor* body, const float& friction, const float& restitution, const float& mass, FName Layer)
 {
 
-	int64 ID = 0;
+	int64 ID = JPH::BodyID::cInvalidBodyID;
 	ExtractPhysicsGeometry(body, [body, this, friction, restitution, mass, Layer, &ID](const JPH::Shape* shape, const FTransform& RelTransform) {
 		// Every sub-collider in the actor is passed to this callback function
 		// We're baking this in world space, so apply actor transform to relative
-		const FTransform   FinalXform = body->GetActorTransform();
-		const JPH::BodyID* joltBodyID = AddDynamicBodyCollision(shape, FinalXform, friction, restitution, mass, Layer);
+		const JPH::BodyID* joltBodyID = AddDynamicBodyCollision(shape, RelTransform, friction, restitution, mass, Layer);
 		if (joltBodyID != nullptr)
 		{
 			JoltBodyActors.Emplace(joltBodyID, body);
@@ -515,13 +531,11 @@ int64 UJoltSubsystem::AddDynamicBody(AActor* body, const float& friction, const 
 
 int64 UJoltSubsystem::AddStaticBody(const AActor* Body, const float& Friction, const float& Restitution, FName Layer)
 {
-	int64 ID = 0;
+	int64 ID = JPH::BodyID::cInvalidBodyID;
 	ExtractPhysicsGeometry(Body, [Body, this, Friction, Restitution, Layer, &ID](const JPH::Shape* Shape, const FTransform& RelTransform) mutable {
 		// Every sub-collider in the actor is passed to this callback function
 		// We're baking this in world space, so apply actor transform to relative
-		// const FTransform FinalXform = RelTransform * Body->GetActorTransform();
-		const FTransform FinalXform = Body->GetActorTransform();
-		if (const JPH::BodyID* bodyID = AddStaticBodyCollision(Shape, FinalXform, Friction, Restitution, Layer))
+		if (const JPH::BodyID* bodyID = AddStaticBodyCollision(Shape, RelTransform, Friction, Restitution, Layer))
 			ID = bodyID->GetIndexAndSequenceNumber();
 	});
 	return ID;
@@ -531,8 +545,14 @@ void UJoltSubsystem::ExtractPhysicsGeometry(const AActor* actor, PhysicsGeometry
 {
 	TInlineComponentArray<UStaticMeshComponent*, 20> Components;
 	const FTransform								 actorTransform = actor->GetActorTransform();
+	const FTransform								 actorTransformInv = FTransform(actorTransform.GetRotation(), actorTransform.GetLocation()).Inverse();
 
 	actor->GetComponents(UStaticMeshComponent::StaticClass(), Components);
+	TArray<TPair<JPH::RefConst<JPH::Shape>, FTransform>> CollectedShapes;
+	PhysicsGeometryCallback								 collect = [&CollectedShapes](JPH::RefConst<JPH::Shape> shape, const FTransform& xform) {
+		CollectedShapes.Emplace(shape, xform);
+	};
+
 	for (UStaticMeshComponent*& Comp : Components)
 	{
 		if (Comp->IsSimulatingPhysics())
@@ -540,8 +560,40 @@ void UJoltSubsystem::ExtractPhysicsGeometry(const AActor* actor, PhysicsGeometry
 			UE_LOG(JoltSubSystemLogs, Error, TEXT("'Simulate physics' turned on for : '%s' which is marked as a jolt body, disabling chaos"), *Comp->GetOwner()->GetActorNameOrLabel());
 			Comp->SetSimulatePhysics(false);
 		}
-		ExtractPhysicsGeometry(Comp, actorTransform, callback);
+
+		// We use each component's world transform so components offset relative to the actor are placed correctly once merged into a compound.
+		ExtractPhysicsGeometry(Comp, Comp->GetComponentTransform(), collect);
 	}
+
+	if (CollectedShapes.Num() == 0)
+		return;
+
+	if (CollectedShapes.Num() == 1)
+	{
+		// Only one shape came out, so no need to create a compound shape.
+		callback(CollectedShapes[0].Key, CollectedShapes[0].Value);
+		return;
+	}
+
+	JPH::StaticCompoundShapeSettings compoundSettings;
+	for (const TPair<JPH::RefConst<JPH::Shape>, FTransform>& ShapeXformPair : CollectedShapes)
+	{
+		const FTransform Relative = ShapeXformPair.Value * actorTransformInv;
+		compoundSettings.AddShape(
+			JoltHelpers::ToJoltVec3(Relative.GetLocation()),
+			JoltHelpers::ToJoltRot(Relative.GetRotation()),
+			ShapeXformPair.Key);
+	}
+
+	JPH::Shape::ShapeResult res = compoundSettings.Create();
+	if (!res.IsValid())
+	{
+		UE_LOG(JoltSubSystemLogs, Error, TEXT("Failed to create actor compound shape for '%s'. Error: %s"),
+			*actor->GetActorNameOrLabel(), *FString(res.GetError().c_str()));
+		return;
+	}
+
+	callback(res.Get(), actorTransform);
 }
 
 void UJoltSubsystem::ExtractPhysicsGeometry(const UStaticMeshComponent* SMC, const FTransform& actorTransform, PhysicsGeometryCallback callback)
@@ -550,14 +602,21 @@ void UJoltSubsystem::ExtractPhysicsGeometry(const UStaticMeshComponent* SMC, con
 	if (!Mesh)
 		return;
 
-	switch (Mesh->GetBodySetup()->CollisionTraceFlag)
+	const UBodySetup* BodySetup = Mesh->GetBodySetup();
+	if (!BodySetup)
+	{
+		UE_LOG(JoltSubSystemLogs, Error, TEXT("No BodySetup on '%s' — collision was never built, skipping."), *Mesh->GetName());
+		return;
+	}
+
+	switch (BodySetup->CollisionTraceFlag)
 	{
 
 		case ECollisionTraceFlag::CTF_UseComplexAsSimple:
-			ExtractComplexPhysicsGeometry(actorTransform, Mesh->GetBodySetup(), Mesh->GetName(), callback);
+			ExtractComplexPhysicsGeometry(actorTransform, BodySetup, Mesh->GetName(), callback);
 			break;
 		default:
-			ExtractPhysicsGeometry(actorTransform, Mesh->GetBodySetup(), callback);
+			ExtractPhysicsGeometry(actorTransform, BodySetup, callback);
 			break;
 	}
 }
@@ -652,6 +711,13 @@ void UJoltSubsystem::ExtractComplexPhysicsGeometry(const FTransform& xformSoFar,
 	callback(res.Get(), xformSoFar);
 }
 
+bool UJoltSubsystem::HasBodyCapacity() const
+{
+	if (!MainPhysicsSystem)
+		return false;
+	return static_cast<int32>(GetNumBodies()) < JoltSettings->MaxBodies;
+}
+
 void UJoltSubsystem::RayCastNarrowPhase(const FVector& start, const FVector& end, const FNarrowPhaseQueryDelegate& hitCallback)
 {
 	if (!hitCallback.IsBound())
@@ -683,7 +749,11 @@ void UJoltSubsystem::ExtractPhysicsGeometry(const FTransform& xformSoFar, const 
 	const JoltPhysicsMaterial* physicsMaterial = GetJoltPhysicsMaterial(bodySetup->GetPhysMaterial());
 
 	//  if the total makes up more than 1, we have a compound shape configured in USkeletalMeshComponent
-	if (bodySetup->AggGeom.BoxElems.Num() + bodySetup->AggGeom.SphereElems.Num() + bodySetup->AggGeom.SphylElems.Num() > 1)
+	if (bodySetup->AggGeom.BoxElems.Num()
+			+ bodySetup->AggGeom.SphereElems.Num()
+			+ bodySetup->AggGeom.SphylElems.Num()
+			+ bodySetup->AggGeom.ConvexElems.Num()
+		> 1)
 	{
 		compoundShapeSettings = new JPH::StaticCompoundShapeSettings();
 	}
@@ -699,7 +769,7 @@ void UJoltSubsystem::ExtractPhysicsGeometry(const FTransform& xformSoFar, const 
 		if (compoundShapeSettings)
 		{
 			compoundShapeSettings->AddShape(
-				JoltHelpers::ToJoltVec3(ueBox.GetTransform().GetLocation()),
+				JoltHelpers::ToJoltVec3(ueBox.GetTransform().GetLocation() * scale),
 				JoltHelpers::ToJoltRot(ueBox.GetTransform().GetRotation()),
 				joltShape);
 			continue;
@@ -717,7 +787,7 @@ void UJoltSubsystem::ExtractPhysicsGeometry(const FTransform& xformSoFar, const 
 		if (compoundShapeSettings)
 		{
 			compoundShapeSettings->AddShape(
-				JoltHelpers::ToJoltVec3(ueSphere.GetTransform().GetLocation()),
+				JoltHelpers::ToJoltVec3(ueSphere.GetTransform().GetLocation() * scale),
 				JoltHelpers::ToJoltRot(ueSphere.GetTransform().GetRotation()),
 				joltShape);
 			continue;
@@ -737,7 +807,7 @@ void UJoltSubsystem::ExtractPhysicsGeometry(const FTransform& xformSoFar, const 
 		if (compoundShapeSettings)
 		{
 			compoundShapeSettings->AddShape(
-				JoltHelpers::ToJoltVec3(Capsule.GetTransform().GetLocation()),
+				JoltHelpers::ToJoltVec3(Capsule.GetTransform().GetLocation() * scale),
 				JoltHelpers::ToJoltRot(Capsule.GetTransform().GetRotation()),
 				joltShape);
 			continue;
@@ -752,26 +822,40 @@ void UJoltSubsystem::ExtractPhysicsGeometry(const FTransform& xformSoFar, const 
 	// Convex hull
 	for (uint16 i = 0; const FKConvexElem& ConVexElem : bodySetup->AggGeom.ConvexElems)
 	{
-		const JPH::ConvexHullShape* convexHull = GetConvexHullCollisionShape(bodySetup, i, scale);
+		const JPH::ConvexHullShape* convexHull = GetConvexHullCollisionShape(bodySetup, i, scale, physicsMaterial);
 		joltShape = convexHull;
 		i++;
+
+		const FTransform ConvexElemTransform = ConVexElem.GetTransform();
 		if (compoundShapeSettings)
 		{
 			compoundShapeSettings->AddShape(
-				JoltHelpers::ToJoltVec3(ConVexElem.GetTransform().GetLocation()),
-				JoltHelpers::ToJoltRot(ConVexElem.GetTransform().GetRotation()),
+				JoltHelpers::ToJoltVec3(ConvexElemTransform.GetLocation() * scale),
+				JoltHelpers::ToJoltRot(ConvexElemTransform.GetRotation()),
 				joltShape);
 			continue;
 		}
 
-		callback(joltShape, xformSoFar);
+		FTransform ShapeXform(ConvexElemTransform.GetRotation(), ConvexElemTransform.GetLocation());
+		FTransform XForm = ShapeXform * xformSoFar;
+		callback(joltShape, XForm);
 	}
 
 	if (compoundShapeSettings)
 	{
-		joltShape = compoundShapeSettings->Create().Get();
-		callback(joltShape, xformSoFar);
+		JPH::Shape::ShapeResult compoundRes = compoundShapeSettings->Create();
 		delete compoundShapeSettings;
+		compoundShapeSettings = nullptr;
+
+		if (!compoundRes.IsValid())
+		{
+			UE_LOG(JoltSubSystemLogs, Error, TEXT("Failed to create compound shape: %s"),
+				*FString(compoundRes.GetError().c_str()));
+			return;
+		}
+
+		joltShape = compoundRes.Get();
+		callback(joltShape, xformSoFar);
 	}
 }
 
@@ -1729,9 +1813,235 @@ void UJoltSubsystem::JoltGetPhysicsTransform(const int64& bodyID, FTransform& tr
 	transform = JoltHelpers::ToUETransform(GetBodyInterface()->GetWorldTransform(JPH::BodyID(bodyID)));
 }
 
+void UJoltSubsystem::JoltSetAllowedDOFs(const int64& bodyID, int32 allowedDOFs) const
+{
+	JoltSetAllowedDOFs(JPH::BodyID(bodyID), allowedDOFs);
+}
+
+void UJoltSubsystem::JoltSetObjectLayer(const int64& bodyID, FName layer) const
+{
+	JoltSetObjectLayer(JPH::BodyID(bodyID), layer);
+}
+
+void UJoltSubsystem::JoltSetMass(const int64& bodyID, const float& mass) const
+{
+	JoltSetMass(JPH::BodyID(bodyID), mass);
+}
+
+void UJoltSubsystem::JoltSetGravityFactor(const int64& bodyID, const float& gravityFactor) const
+{
+	JoltSetGravityFactor(JPH::BodyID(bodyID), gravityFactor);
+}
+
+void UJoltSubsystem::JoltSetApplyGyroscopicForce(const int64& bodyID, bool bApplyGyroscopicForce) const
+{
+	JoltSetApplyGyroscopicForce(JPH::BodyID(bodyID), bApplyGyroscopicForce);
+}
+
+void UJoltSubsystem::JoltSetMaxLinearVelocity(const int64& bodyID, float maxLinearVelocity) const
+{
+	JoltSetMaxLinearVelocity(JPH::BodyID(bodyID), maxLinearVelocity);
+}
+
+float UJoltSubsystem::JoltGetMaxLinearVelocity(const int64& bodyID) const
+{
+	return JoltGetMaxLinearVelocity(JPH::BodyID(bodyID));
+}
+
+void UJoltSubsystem::JoltSetMaxAngularVelocity(const int64& bodyID, float maxAngularVelocity) const
+{
+	JoltSetMaxAngularVelocity(JPH::BodyID(bodyID), maxAngularVelocity);
+}
+
+void UJoltSubsystem::JoltSetFriction(const int64& bodyID, float friction) const
+{
+	JoltSetFriction(JPH::BodyID(bodyID), friction);
+}
+
+void UJoltSubsystem::JoltSetRestitution(const int64& bodyID, float restitution) const
+{
+	JoltSetRestitution(JPH::BodyID(bodyID), restitution);
+}
+
+void UJoltSubsystem::JoltSetLinearDamping(const int64& bodyID, float linearDamping) const
+{
+	JoltSetLinearDamping(JPH::BodyID(bodyID), linearDamping);
+}
+
+void UJoltSubsystem::JoltSetAngularDamping(const int64& bodyID, float angularDamping) const
+{
+	JoltSetAngularDamping(JPH::BodyID(bodyID), angularDamping);
+}
+
+void UJoltSubsystem::JoltSetAllowSleeping(const int64& bodyID, bool bAllowSleeping) const
+{
+	JoltSetAllowSleeping(JPH::BodyID(bodyID), bAllowSleeping);
+}
+
+void UJoltSubsystem::JoltSetNumVelocityStepsOverride(const int64& bodyID, int numVelocityStepsOverride) const
+{
+	JoltSetNumVelocityStepsOverride(JPH::BodyID(bodyID), numVelocityStepsOverride);
+}
+
+void UJoltSubsystem::JoltSetNumPositionStepsOverride(const int64& bodyID, int numPositionStepsOverride) const
+{
+	JoltSetNumPositionStepsOverride(JPH::BodyID(bodyID), numPositionStepsOverride);
+}
+
+void UJoltSubsystem::JoltSetEnhancedInternalEdgeRemoval(const int64& bodyID, bool bEnhancedInternalEdgeRemoval) const
+{
+	JoltSetEnhancedInternalEdgeRemoval(JPH::BodyID(bodyID), bEnhancedInternalEdgeRemoval);
+}
+
+void UJoltSubsystem::JoltActivateBody(const int64& bodyID) const
+{
+	JoltActivateBody(JPH::BodyID(bodyID));
+}
+
 void UJoltSubsystem::JoltGetPhysicsTransform(const JPH::BodyID& bodyID, FTransform& transform) const
 {
 	transform = JoltHelpers::ToUETransform(GetBodyInterface()->GetWorldTransform(bodyID));
+}
+
+void UJoltSubsystem::JoltSetAllowedDOFs(const JPH::BodyID& bodyID, int32 allowedDOFs) const
+{
+	WithLockedBody(bodyID, [allowedDOFs](JPH::Body& body) {
+		if (JPH::MotionProperties* MotionProperties = body.GetMotionProperties())
+		{
+			JPH::EAllowedDOFs JoltDOFs = JPH::EAllowedDOFs::None;
+
+			// X Axis maps 1:1
+			if (allowedDOFs & (int32)EJoltAllowedDOFs::TranslationX)
+				JoltDOFs |= JPH::EAllowedDOFs::TranslationX;
+			if (allowedDOFs & (int32)EJoltAllowedDOFs::RotationX)
+				JoltDOFs |= JPH::EAllowedDOFs::RotationX;
+
+			// Unreal's Y maps to Jolt's Z
+			if (allowedDOFs & (int32)EJoltAllowedDOFs::TranslationY)
+				JoltDOFs |= JPH::EAllowedDOFs::TranslationZ;
+			if (allowedDOFs & (int32)EJoltAllowedDOFs::RotationY)
+				JoltDOFs |= JPH::EAllowedDOFs::RotationZ;
+
+			// Unreal's Z maps to Jolt's Y
+			if (allowedDOFs & (int32)EJoltAllowedDOFs::TranslationZ)
+				JoltDOFs |= JPH::EAllowedDOFs::TranslationY;
+			if (allowedDOFs & (int32)EJoltAllowedDOFs::RotationZ)
+				JoltDOFs |= JPH::EAllowedDOFs::RotationY;
+
+			JPH::MassProperties MassProperties = body.GetShape()->GetMassProperties();
+			MassProperties.ScaleToMass(1.0f / MotionProperties->GetInverseMass());
+			MotionProperties->SetMassProperties(JoltDOFs, MassProperties);
+		}
+	});
+}
+
+void UJoltSubsystem::JoltSetObjectLayer(const JPH::BodyID& bodyID, FName layer) const
+{
+	JPH::ObjectLayer objectLayer = ResolveObjectLayer(layer);
+	if (objectLayer == JPH::cObjectLayerInvalid)
+		return;
+
+	GetBodyInterface()->SetObjectLayer(bodyID, objectLayer);
+}
+
+void UJoltSubsystem::JoltSetMass(const JPH::BodyID& bodyID, const float& mass) const
+{
+	WithLockedBody(bodyID, [mass](JPH::Body& body) {
+		if (body.GetMotionProperties())
+			body.GetMotionProperties()->ScaleToMass(mass);
+	});
+}
+
+void UJoltSubsystem::JoltSetGravityFactor(const JPH::BodyID& bodyID, const float& gravityFactor) const
+{
+	GetBodyInterface()->SetGravityFactor(bodyID, gravityFactor);
+}
+
+void UJoltSubsystem::JoltSetApplyGyroscopicForce(const JPH::BodyID& bodyID, bool bApplyGyroscopicForce) const
+{
+	WithLockedBody(bodyID, [bApplyGyroscopicForce](JPH::Body& body) {
+		body.SetApplyGyroscopicForce(bApplyGyroscopicForce);
+	});
+}
+
+void UJoltSubsystem::JoltSetMaxLinearVelocity(const JPH::BodyID& bodyID, float maxLinearVelocity) const
+{
+	GetBodyInterface()->SetMaxLinearVelocity(bodyID, JoltHelpers::ToJoltSize(maxLinearVelocity));
+}
+
+float UJoltSubsystem::JoltGetMaxLinearVelocity(const JPH::BodyID& bodyID) const
+{
+	return JoltHelpers::ToUESize(GetBodyInterface()->GetMaxLinearVelocity(bodyID));
+}
+
+void UJoltSubsystem::JoltSetMaxAngularVelocity(const JPH::BodyID& bodyID, float maxAngularVelocity) const
+{
+	GetBodyInterface()->SetMaxAngularVelocity(bodyID, JoltHelpers::ToJoltAngularRate(maxAngularVelocity));
+}
+
+void UJoltSubsystem::JoltSetFriction(const JPH::BodyID& bodyID, float friction) const
+{
+	GetBodyInterface()->SetFriction(bodyID, friction);
+}
+
+void UJoltSubsystem::JoltSetRestitution(const JPH::BodyID& bodyID, float restitution) const
+{
+	GetBodyInterface()->SetRestitution(bodyID, restitution);
+}
+
+void UJoltSubsystem::JoltSetLinearDamping(const JPH::BodyID& bodyID, float linearDamping) const
+{
+	WithLockedBody(bodyID, [linearDamping](JPH::Body& body) {
+		if (body.GetMotionProperties())
+			body.GetMotionProperties()->SetLinearDamping(linearDamping);
+	});
+}
+
+void UJoltSubsystem::JoltSetAngularDamping(const JPH::BodyID& bodyID, float angularDamping) const
+{
+	WithLockedBody(bodyID, [angularDamping](JPH::Body& body) {
+		if (body.GetMotionProperties())
+			body.GetMotionProperties()->SetAngularDamping(angularDamping);
+	});
+}
+
+void UJoltSubsystem::JoltSetAllowSleeping(const JPH::BodyID& bodyID, bool bAllowSleeping) const
+{
+	WithLockedBody(bodyID, [bAllowSleeping](JPH::Body& body) {
+		body.SetAllowSleeping(bAllowSleeping);
+	});
+}
+
+void UJoltSubsystem::JoltSetNumVelocityStepsOverride(const JPH::BodyID& bodyID, int numVelocityStepsOverride) const
+{
+	WithLockedBody(bodyID, [numVelocityStepsOverride](JPH::Body& body) {
+		if (JPH::MotionProperties* MotionProperties = body.GetMotionProperties())
+		{
+			MotionProperties->SetNumVelocityStepsOverride(numVelocityStepsOverride);
+		}
+	});
+}
+
+void UJoltSubsystem::JoltSetNumPositionStepsOverride(const JPH::BodyID& bodyID, int numPositionStepsOverride) const
+{
+	WithLockedBody(bodyID, [numPositionStepsOverride](JPH::Body& body) {
+		if (JPH::MotionProperties* MotionProperties = body.GetMotionProperties())
+		{
+			MotionProperties->SetNumPositionStepsOverride(numPositionStepsOverride);
+		}
+	});
+}
+
+void UJoltSubsystem::JoltSetEnhancedInternalEdgeRemoval(const JPH::BodyID& bodyID, bool bEnhancedInternalEdgeRemoval) const
+{
+	WithLockedBody(bodyID, [bEnhancedInternalEdgeRemoval](JPH::Body& body) {
+		body.SetEnhancedInternalEdgeRemoval(bEnhancedInternalEdgeRemoval);
+	});
+}
+
+void UJoltSubsystem::JoltActivateBody(const JPH::BodyID& bodyID) const
+{
+	GetBodyInterface()->ActivateBody(bodyID);
 }
 
 void UJoltSubsystem::JoltAddCentralImpulse(const JPH::BodyID& bodyID, const FVector& impulse) const

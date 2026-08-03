@@ -13,6 +13,7 @@
 #include "JoltFilters.h"
 #include "JoltPhysicsCallbackInterface.h"
 #include "Delegates/DelegateCombinations.h"
+#include "Engine/Engine.h"
 #include "UObject/ObjectMacros.h"
 
 #ifdef JPH_DEBUG_RENDERER
@@ -146,7 +147,7 @@ public:
 	 * Useful for client-server configs where scaling time is desired
 	 */
 	UFUNCTION(BlueprintCallable, Category = "Jolt Physics")
-	double GetTimeScale() const { return ConfiguredDeltaSeconds; };
+	double GetTimeScale() const { return ConfiguredDeltaSeconds; }
 
 	/*
 	 * This is the value that is passed to the physics update() function
@@ -155,15 +156,15 @@ public:
 	 * Call interval can change, the physicsDeltaTime will not (at runtime only)
 	 */
 	UFUNCTION(BlueprintCallable, Category = "Jolt Physics")
-	double GetDeltaTime() const { return JoltSettings->FixedDeltaTime; };
-
+	double GetDeltaTime() const { return JoltSettings->FixedDeltaTime; }
+	
 	/*
 	 * Jolt physics tickrate. This is divided in inCollisionSteps iterations
 	 * Number of physics ticks per second
 	 */
 	UFUNCTION(BlueprintCallable, Category = "Jolt Physics")
-	int GetTickRate() { return JoltSettings->TickRate; };
-
+	int GetTickRate() { return JoltSettings->TickRate; }
+	
 #if WITH_EDITOR
 	UFUNCTION(BlueprintCallable, Category = "Jolt Physics")
 	void ExtractSplineMeshGeometry(const UBodySetup* splineMeshBodySetup, const FTransform& splineMeshTransform);
@@ -208,6 +209,61 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Jolt Physics", BlueprintPure = false)
 	void JoltGetPhysicsTransform(const int64& bodyID, FTransform& transform) const;
 
+	UFUNCTION(BlueprintCallable, Category = "Jolt Physics", BlueprintPure = false)
+	void JoltSetAllowedDOFs(const int64& bodyID, int32 allowedDOFs) const;
+	
+	UFUNCTION(BlueprintCallable, Category = "Jolt Physics", BlueprintPure = false)
+	void JoltSetObjectLayer(const int64& bodyID, FName layer) const;
+	
+	UFUNCTION(BlueprintCallable, Category = "Jolt Physics", BlueprintPure = false)
+	void JoltSetMass(const int64& bodyID, const float& mass) const;
+	
+	UFUNCTION(BlueprintCallable, Category = "Jolt Physics", BlueprintPure = false)
+	void JoltSetGravityFactor(const int64& bodyID, const float& gravityFactor) const;
+	
+	UFUNCTION(BlueprintCallable, Category = "Jolt Physics", BlueprintPure = false)
+	void JoltSetApplyGyroscopicForce(const int64& bodyID, bool bApplyGyroscopicForce) const;
+	
+	UFUNCTION(BlueprintCallable, Category = "Jolt Physics", BlueprintPure = false)
+	void JoltSetMaxLinearVelocity(const int64& bodyID, float maxLinearVelocity) const;
+	
+	UFUNCTION(BlueprintCallable, Category = "Jolt Physics", BlueprintPure = false)
+	float JoltGetMaxLinearVelocity(const int64& bodyID) const;
+	
+	UFUNCTION(BlueprintCallable, Category = "Jolt Physics", BlueprintPure = false)
+	void JoltSetMaxAngularVelocity(const int64& bodyID, float maxAngularVelocity) const;
+	
+	UFUNCTION(BlueprintCallable, Category = "Jolt Physics", BlueprintPure = false)
+	void JoltSetFriction(const int64& bodyID, float friction) const;
+
+	UFUNCTION(BlueprintCallable, Category = "Jolt Physics", BlueprintPure = false)
+	void JoltSetRestitution(const int64& bodyID, float restitution) const;
+
+	UFUNCTION(BlueprintCallable, Category = "Jolt Physics", BlueprintPure = false)
+	void JoltSetLinearDamping(const int64& bodyID, float linearDamping) const;
+
+	UFUNCTION(BlueprintCallable, Category = "Jolt Physics", BlueprintPure = false)
+	void JoltSetAngularDamping(const int64& bodyID, float angularDamping) const;
+	
+	UFUNCTION(BlueprintCallable, Category = "Jolt Physics", BlueprintPure = false)
+	void JoltSetAllowSleeping(const int64& bodyID, bool bAllowSleeping) const;
+
+	UFUNCTION(BlueprintCallable, Category = "Jolt Physics", BlueprintPure = false)
+	void JoltSetNumVelocityStepsOverride(const int64& bodyID, int numVelocityStepsOverride) const;
+	
+	UFUNCTION(BlueprintCallable, Category = "Jolt Physics", BlueprintPure = false)
+	void JoltSetNumPositionStepsOverride(const int64& bodyID, int numPositionStepsOverride) const;
+	
+	UFUNCTION(BlueprintCallable, Category = "Jolt Physics", BlueprintPure = false)
+	void JoltSetEnhancedInternalEdgeRemoval(const int64& bodyID, bool bEnhancedInternalEdgeRemoval) const;
+
+	/*
+	 * Wakes a sleeping body. Jolt sleeps bodies that come to rest, and property changes
+	 * (gravity factor, damping, mass, velocity limits) do not wake them on their own.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Jolt Physics", BlueprintPure = false)
+	void JoltActivateBody(const int64& bodyID) const;
+	
 	UFUNCTION(BlueprintCallable, Category = "Jolt Physics")
 	void SetTimeScale(double deltaTime);
 
@@ -255,7 +311,41 @@ public:
 	void JoltSetPhysicsRotation(const JPH::BodyID& bodyID, const FQuat& rotationWS) const;
 
 	void JoltGetPhysicsTransform(const JPH::BodyID& bodyID, FTransform& transform) const;
+	
+	void JoltSetAllowedDOFs(const JPH::BodyID& bodyID, int32 allowedDOFs) const;
+	
+	void JoltSetObjectLayer(const JPH::BodyID& bodyID, FName layer) const;
+	
+	void JoltSetMass(const JPH::BodyID& bodyID, const float& mass) const;
+	
+	void JoltSetGravityFactor(const JPH::BodyID& bodyID, const float& gravityFactor) const;
+	
+	void JoltSetApplyGyroscopicForce(const JPH::BodyID& bodyID, bool bApplyGyroscopicForce) const;
+	
+	void JoltSetMaxLinearVelocity(const JPH::BodyID& bodyID, float maxLinearVelocity) const;
+	
+	float JoltGetMaxLinearVelocity(const JPH::BodyID& bodyID) const;
+	
+	void JoltSetMaxAngularVelocity(const JPH::BodyID& bodyID, float maxAngularVelocity) const;
+	
+	void JoltSetFriction(const JPH::BodyID& bodyID, float friction) const;
 
+	void JoltSetRestitution(const JPH::BodyID& bodyID, float restitution) const;
+
+	void JoltSetLinearDamping(const JPH::BodyID& bodyID, float linearDamping) const;
+
+	void JoltSetAngularDamping(const JPH::BodyID& bodyID, float angularDamping) const;
+	
+	void JoltSetAllowSleeping(const JPH::BodyID& bodyID, bool bAllowSleeping) const;
+
+	void JoltSetNumVelocityStepsOverride(const JPH::BodyID& bodyID, int numVelocityStepsOverride) const;
+	
+	void JoltSetNumPositionStepsOverride(const JPH::BodyID& bodyID, int numPositionStepsOverride) const;
+	
+	void JoltSetEnhancedInternalEdgeRemoval(const JPH::BodyID& bodyID, bool bEnhancedInternalEdgeRemoval) const;
+
+	void JoltActivateBody(const JPH::BodyID& bodyID) const;
+	
 	// This will first perform a broadphase, and then a narrow phase query
 	void RayCastNarrowPhase(const FVector& start, const FVector& end, NarrowPhaseQueryCallback& hitCallback, const JPH::BodyFilter& bodyFilter = {}) const;
 
@@ -347,6 +437,15 @@ private:
 	const JPH::BodyID* AddBodyToSimulation(const JPH::BodyID* bodyID, const JPH::BodyCreationSettings& shapeSettings, float friction, float restitution);
 
 	JPH::Body* GetBody(uint32 bodyID) const { return BodyIDBodyMap[bodyID]; }
+	
+	template<typename FuncType>
+	void WithLockedBody(JPH::BodyID BodyID, FuncType Func) const
+	{
+		if (!MainPhysicsSystem) return;
+		JPH::BodyLockWrite Lock(MainPhysicsSystem->GetBodyLockInterface(), BodyID);
+		if (!Lock.Succeeded()) return;
+		Func(Lock.GetBody());
+	}
 
 	UPROPERTY()
 	UJoltDataAsset* JoltDataAsset = nullptr;
@@ -525,6 +624,8 @@ public:
 		return MainPhysicsSystem->GetNumBodies();
 	}
 
+	bool HasBodyCapacity() const;
+	
 	friend class UJoltSkeletalMeshComponent;
 	friend class JoltAxisConstraint;
 };

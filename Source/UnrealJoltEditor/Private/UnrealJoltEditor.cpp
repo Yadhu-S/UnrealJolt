@@ -1,4 +1,5 @@
 #include "UnrealJoltEditor.h"
+#include "JoltMotionTypeCustomization.h"
 #include "JoltSettings.h"
 #include "JoltSettingsDetails.h"
 #include "Modules/ModuleManager.h"
@@ -14,6 +15,10 @@ void FUnrealJoltEditorModule::StartupModule()
 		UJoltSettings::StaticClass()->GetFName(),
 		FOnGetDetailCustomizationInstance::CreateStatic(&FJoltSettingsDetails::MakeInstance));
 
+	PropertyModule.RegisterCustomPropertyTypeLayout(
+		TEXT("EJoltMotionType"),
+		FOnGetPropertyTypeCustomizationInstance::CreateStatic(&FJoltMotionTypeCustomization::MakeInstance));
+	
 	PropertyModule.NotifyCustomizationModuleChanged();
 }
 

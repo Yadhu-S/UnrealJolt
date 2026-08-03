@@ -30,6 +30,17 @@ public:
 		return Sz * WORLD_TO_JOLT_SCALE;
 	}
 
+	// Angular rates: Unreal-facing APIs are deg/s (matching SetPhysicsAngularVelocityInDegrees), Jolt is rad/s.
+	inline static float ToUEAngularRate(const float& RadiansPerSecond)
+	{
+		return FMath::RadiansToDegrees(RadiansPerSecond);
+	}
+
+	inline static float ToJoltAngularRate(const float& DegreesPerSecond)
+	{
+		return FMath::DegreesToRadians(DegreesPerSecond);
+	}
+
 	inline static JPH::Float3 ToJoltFloat3(const FVector3f& fvector3f)
 	{
 		return JPH::Float3(fvector3f.X * WORLD_TO_JOLT_SCALE, fvector3f.Z * WORLD_TO_JOLT_SCALE, fvector3f.Y * WORLD_TO_JOLT_SCALE);
