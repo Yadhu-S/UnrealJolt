@@ -129,17 +129,19 @@ public class UnrealJoltLibrary : ModuleRules
 				case "Debug":
 					cmakeOptions += " -DUSE_ASSERTS=ON " ;
 					cmakeOptions += " -DDEBUG_RENDERER_IN_DISTRIBUTION=ON ";
+					cmakeOptions += " -DPROFILER_IN_DEBUG_AND_RELEASE=OFF ";
 					cmakeOptions += " -DCMAKE_EXPORT_COMPILE_COMMANDS=ON ";
-					buildTypeGenerator = "-DCMAKE_CONFIGURATION_TYPES=Debug";
+					buildTypeGenerator = "-DCMAKE_BUILD_TYPE=Debug";
 					break;
 				case "Release":
 					cmakeOptions += " -DUSE_ASSERTS=ON " ;
 					cmakeOptions += " -DDEBUG_RENDERER_IN_DISTRIBUTION=ON ";
+					cmakeOptions += " -DPROFILER_IN_DEBUG_AND_RELEASE=OFF ";
 					cmakeOptions += " -DCMAKE_EXPORT_COMPILE_COMMANDS=ON ";
-					buildTypeGenerator = "-DCMAKE_CONFIGURATION_TYPES=Release";
+					buildTypeGenerator = "-DCMAKE_BUILD_TYPE=Release";
 					break;
 				default:
-					buildTypeGenerator = "-DCMAKE_CONFIGURATION_TYPES=Distribution ";
+					buildTypeGenerator = "-DCMAKE_BUILD_TYPE=Distribution ";
 					break;
 			}
 		}else
@@ -250,7 +252,7 @@ public class UnrealJoltLibrary : ModuleRules
 			default:
 				// DISTRIBUTION
 				Console.WriteLine("Building Jolt: DISTRIBUTION");
-				//PublicDefinitions.Add("NDEBUG=1");
+				PublicDefinitions.Add("JPH_NO_DEBUG");
 				break;
 		}
 
