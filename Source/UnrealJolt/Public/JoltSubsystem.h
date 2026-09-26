@@ -28,6 +28,7 @@ class UJoltSkeletalMeshComponent;
 class JoltAxisConstraint;
 class JoltPhysicsMaterial;
 class ULandscapeComponent;
+class USplineMeshComponent;
 
 UDELEGATE(BlueprintCallable)
 DECLARE_DYNAMIC_DELEGATE_FourParams(FNarrowPhaseQueryDelegate, const FVector&, hitLocation, const FVector&, hitNormal, bool, bHasHit, const int32, hitBodyID);
@@ -165,10 +166,6 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Jolt Physics")
 	int GetTickRate() { return JoltSettings->TickRate; }
 	
-#if WITH_EDITOR
-	UFUNCTION(BlueprintCallable, Category = "Jolt Physics")
-	void ExtractSplineMeshGeometry(const UBodySetup* splineMeshBodySetup, const FTransform& splineMeshTransform);
-#endif
 
 	UFUNCTION(BlueprintCallable, Category = "Jolt Physics", BlueprintPure = false)
 	void JoltSetLinearAndAngularVelocity(const int64& bodyID, const FVector& velocity, const FVector& angularVelocity) const;
@@ -537,6 +534,10 @@ private:
 	bool CookBodies() const;
 
 	void HandleLandscapeMeshes(const ALandscape* LandscapeActor);
+
+	bool CreateMergedSplineMeshBody(const TArray<const USplineMeshComponent*>& splineMeshes);
+
+	void CreateStaticSplineBody(const JPH::Shape* shape, const FTransform& transform);
 
 #endif
 

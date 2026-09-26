@@ -31,6 +31,7 @@ PRAGMA_PUSH_PLATFORM_DEFAULT_PACKING
 #include <Jolt/Physics/Collision/Shape/BoxShape.h>
 #include <Jolt/Physics/Collision/PhysicsMaterial.h>
 #include <Jolt/Physics/Collision/Shape/MeshShape.h>
+#include <Jolt/Geometry/Indexify.h>
 #include <Jolt/Physics/Collision/Shape/SphereShape.h>
 #include <Jolt/Physics/Collision/Shape/CapsuleShape.h>
 #include <Jolt/Physics/Collision/Shape/TriangleShape.h>

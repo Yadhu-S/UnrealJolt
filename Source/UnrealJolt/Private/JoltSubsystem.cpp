@@ -501,8 +501,7 @@ void UJoltSubsystem::InitPhysicsSystem(
 	if (
 		world
 		&& (world->WorldType == EWorldType::Game || world->WorldType == EWorldType::PIE)
-		&& JPH::DebugRenderer::sInstance == nullptr
-		)
+		&& JPH::DebugRenderer::sInstance == nullptr)
 	{
 		JoltDebugRendererImpl = new UEJoltDebugRenderer(world);
 	}
@@ -1706,6 +1705,10 @@ void UJoltSubsystem::HandleLandscapeMeshes(const ALandscape* LandscapeActor)
 		return;
 	}
 
+	/* Let's just weld the an individual landscape spline system together, it avoids ghost collisions and saves static body IDs
+	 * https://jrouwe.github.io/JoltPhysicsDocs/5.6.0/index.html#ghost-collisions
+	 */
+	TArray<const USplineMeshComponent*> complexSplineMeshes;
 	for (const TObjectPtr<ULandscapeSplineSegment>& splineSegment : splineSegments)
 	{
 		if (splineSegment->SplineMeshes.IsEmpty())
@@ -1714,66 +1717,149 @@ void UJoltSubsystem::HandleLandscapeMeshes(const ALandscape* LandscapeActor)
 			continue;
 		}
 
+		// This is dodgy
 		FScriptArrayHelper arrayHelper(localMeshesProp, localMeshesProp->ContainerPtrToValuePtr<void>(splineSegment));
 		for (int32 i = 0; i < arrayHelper.Num(); ++i)
 		{
+			// even more dodgy
 			UObject*					element = *reinterpret_cast<UObject**>(arrayHelper.GetRawPtr(i));
 			const USplineMeshComponent* splineMesh = Cast<USplineMeshComponent>(element);
 			if (splineMesh == nullptr || splineMesh->GetBodySetup() == nullptr)
 			{
 				continue;
 			}
-			ExtractSplineMeshGeometry(splineMesh->GetBodySetup(), splineMesh->GetComponentTransform());
+
+			const UBodySetup* bodySetup = splineMesh->GetBodySetup();
+			if (bodySetup->GetCollisionTraceFlag() == ECollisionTraceFlag::CTF_UseComplexAsSimple)
+			{
+				if (bodySetup->TriMeshGeometries.Num() == 0 || !bodySetup->TriMeshGeometries[0].IsValid())
+				{
+					UE_LOG(JoltSubSystemLogs, Warning, TEXT("Spline mesh requests complex-as-simple but has no cooked tri-mesh"));
+					continue;
+				}
+				complexSplineMeshes.Add(splineMesh);
+			}
+			else
+			{
+				ExtractPhysicsGeometry(
+					splineMesh->GetComponentTransform(),
+					bodySetup,
+					[this](const JPH::Shape* Shape, const FTransform& RelTransform) {
+						CreateStaticSplineBody(Shape, RelTransform);
+					});
+			}
+		}
+	}
+
+	if (!complexSplineMeshes.IsEmpty())
+	{
+		const bool created = CreateMergedSplineMeshBody(complexSplineMeshes);
+		ensureMsgf(created, TEXT("HandleLandscapeMeshes() merged spline mesh failed"));
+	}
+}
+
+static void AppendWorldSplineMeshTriangles(const UBodySetup* bodySetup, const FTransform& componentTransform,
+	const FVector& origin, uint32 materialIndex, JPH::TriangleList& outTriangles)
+{
+	const Chaos::FTriangleMeshImplicitObjectPtr&			 triMesh = bodySetup->TriMeshGeometries[0];
+	const Chaos::FTriangleMeshImplicitObject::ParticlesType& particles = triMesh->Particles();
+	const Chaos::FTrimeshIndexBuffer&						 elements = triMesh->Elements();
+
+	auto toJolt = [&](int32 index) {
+		const Chaos::TVec3<Chaos::FRealSingle>& p = particles.GetX(index);
+		const FVector							worldPos = componentTransform.TransformPosition(FVector(p[0], p[1], p[2]));
+		return JoltHelpers::ToJoltFloat3(FVector3f(worldPos - origin));
+	};
+
+	// Indices 1/2 swapped: the UE->Jolt Y/Z axis swap reverses winding.
+	if (elements.RequiresLargeIndices())
+	{
+		for (const Chaos::TVec3<int32>& t : elements.GetLargeIndexBuffer())
+		{
+			outTriangles.push_back(JPH::Triangle(toJolt(t[0]), toJolt(t[2]), toJolt(t[1]), materialIndex));
+		}
+	}
+	else
+	{
+		for (const Chaos::TVec3<uint16>& t : elements.GetSmallIndexBuffer())
+		{
+			outTriangles.push_back(JPH::Triangle(toJolt(t[0]), toJolt(t[2]), toJolt(t[1]), materialIndex));
 		}
 	}
 }
 
-void UJoltSubsystem::ExtractSplineMeshGeometry(const UBodySetup* splineMeshBodySetup, const FTransform& splineMeshTransform)
+bool UJoltSubsystem::CreateMergedSplineMeshBody(const TArray<const USplineMeshComponent*>& splineMeshes)
 {
-	ensure(splineMeshBodySetup != nullptr);
-	if (splineMeshBodySetup == nullptr)
+	constexpr float weldDistanceMeters = 0.001f;
+
+	FBox bounds(ForceInit);
+	for (const USplineMeshComponent* splineMesh : splineMeshes)
 	{
-		return;
+		bounds += splineMesh->Bounds.GetBox();
+	}
+	// Vertices are stored relative to the body in float, so centre it on the road.
+	const FVector origin = bounds.GetCenter();
+
+	JPH::TriangleList		 worldTriangles;
+	JPH::PhysicsMaterialList materials;
+	for (const USplineMeshComponent* splineMesh : splineMeshes)
+	{
+		const JoltPhysicsMaterial* material = GetJoltPhysicsMaterial(splineMesh->GetBodySetup()->GetPhysMaterial());
+		auto					   found = std::find(materials.begin(), materials.end(), material);
+		const uint32			   materialIndex = static_cast<uint32>(found - materials.begin());
+		if (found == materials.end())
+		{
+			materials.push_back(material);
+		}
+		AppendWorldSplineMeshTriangles(splineMesh->GetBodySetup(), splineMesh->GetComponentTransform(), origin, materialIndex, worldTriangles);
 	}
 
+	JPH::VertexList			 weldedVertices;
+	JPH::IndexedTriangleList weldedTriangles;
+	JPH::Indexify(worldTriangles, weldedVertices, weldedTriangles, weldDistanceMeters);
+
+	int32 totalSourceVertices = 0;
+	for (const USplineMeshComponent* splineMesh : splineMeshes)
+	{
+		totalSourceVertices += splineMesh->GetBodySetup()->TriMeshGeometries[0]->Particles().Size();
+	}
+	UE_LOG(JoltSubSystemLogs, Log, TEXT("Merged %d spline meshes: %d triangles, %d materials, %d source vertices welded to %d"),
+		splineMeshes.Num(), static_cast<int32>(weldedTriangles.size()), static_cast<int32>(materials.size()),
+		totalSourceVertices, static_cast<int32>(weldedVertices.size()));
+
+	JPH::MeshShapeSettings	meshSettings(std::move(weldedVertices), std::move(weldedTriangles), std::move(materials));
+	JPH::Shape::ShapeResult res = meshSettings.Create();
+	if (!res.IsValid())
+	{
+		UE_LOG(JoltSubSystemLogs, Error, TEXT("Failed to create merged spline mesh. Error: %s"), *FString(res.GetError().c_str()));
+		return false;
+	}
+
+	CreateStaticSplineBody(res.Get(), FTransform(origin));
+	return true;
+}
+
+void UJoltSubsystem::CreateStaticSplineBody(const JPH::Shape* shape, const FTransform& transform)
+{
 	const JPH::ObjectLayer splineMeshLayer = ResolveObjectLayer(JoltSettings->DefaultStaticLayer);
 	if (splineMeshLayer == JPH::cObjectLayerInvalid)
 	{
 		return;
 	}
-	auto createSplineMesh = [this, splineMeshLayer](const JPH::Shape* Shape, const FTransform& RelTransform) mutable {
-		JPH::BodyCreationSettings shapeSettings(
-			Shape,
-			JoltHelpers::ToJoltPos(RelTransform.GetLocation()),
-			JoltHelpers::ToJoltRot(RelTransform.GetRotation()),
-			JPH::EMotionType::Static,
-			splineMeshLayer);
 
-		StaticBodyIDX++;
-		JPH::Body* createdBody = BodyInterface->CreateBodyWithoutID(shapeSettings);
-		check(createdBody != nullptr);
-		// TODO read this from the physics material
-		createdBody->SetRestitution(0.1f);
-		createdBody->SetFriction(0.1f);
-		SavedBodies.Add(createdBody);
-	};
+	JPH::BodyCreationSettings shapeSettings(
+		shape,
+		JoltHelpers::ToJoltPos(transform.GetLocation()),
+		JoltHelpers::ToJoltRot(transform.GetRotation()),
+		JPH::EMotionType::Static,
+		splineMeshLayer);
 
-	if (splineMeshBodySetup->GetCollisionTraceFlag() == ECollisionTraceFlag::CTF_UseComplexAsSimple
-		&& splineMeshBodySetup->TriMeshGeometries.Num() > 0)
-	{
-		ExtractComplexPhysicsGeometry(splineMeshTransform, splineMeshBodySetup,
-			splineMeshBodySetup->GetOuter() ? splineMeshBodySetup->GetOuter()->GetName() : FString(TEXT("SplineMesh")),
-			createSplineMesh);
-	}
-	else
-	{
-		if (splineMeshBodySetup->GetCollisionTraceFlag() == ECollisionTraceFlag::CTF_UseComplexAsSimple)
-		{
-			UE_LOG(JoltSubSystemLogs, Warning,
-				TEXT("Landscape Spline mesh request complex-as-simple, but no cooked tri-mesh on the spline body setup"));
-		}
-		ExtractPhysicsGeometry(splineMeshTransform, splineMeshBodySetup, createSplineMesh);
-	}
+	JPH::Body* createdBody = BodyInterface->CreateBodyWithoutID(shapeSettings);
+	check(createdBody != nullptr);
+	// TODO read this from the physics material
+	createdBody->SetRestitution(0.1f);
+	createdBody->SetFriction(0.1f);
+	SavedBodies.Add(createdBody);
 }
 
 #endif
