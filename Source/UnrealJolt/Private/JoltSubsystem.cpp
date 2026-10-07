@@ -126,14 +126,14 @@ void UJoltSubsystem::Deinitialize()
 	*/
 }
 
-uint16 UJoltSubsystem::AddPrePhysicsCallback(const TDelegate<void(float)>& callback) const
+uint16 UJoltSubsystem::AddPrePhysicsCallback(const TDelegate<void(float)>& callback, int32 order) const
 {
-	return JoltWorker->AddPrePhysicsCallback(callback);
+	return JoltWorker->AddPrePhysicsCallback(callback, order);
 }
 
-uint16 UJoltSubsystem::AddPostPhysicsCallback(const TDelegate<void(float)>& callback) const
+uint16 UJoltSubsystem::AddPostPhysicsCallback(const TDelegate<void(float)>& callback, int32 order) const
 {
-	return JoltWorker->AddPostPhysicsCallback(callback);
+	return JoltWorker->AddPostPhysicsCallback(callback, order);
 }
 
 void UJoltSubsystem::AddPostInterpolationCallback(const TDelegate<void(float)>& callback)

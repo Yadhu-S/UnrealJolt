@@ -34,23 +34,11 @@ FJoltWorker::~FJoltWorker()
 void FJoltWorker::StepPhysicsWithCallBacks()
 {
 	TRACE_CPUPROFILER_EVENT_SCOPE_STR("Jolt_PhysicsStep");
-	for (const TDelegate<void(float)>& preCallback : PrePhysicsCallbacks)
-	{
-		if (preCallback.IsBound())
-		{
-			preCallback.Execute(WorkerOptions->cFixedDeltaTime);
-		}
-	}
+	PrePhysicsCallbacks.Execute(WorkerOptions->cFixedDeltaTime);
 
 	StepPhysics();
 
-	for (const TDelegate<void(float)>& postCallback : PostPhysicsCallbacks)
-	{
-		if (postCallback.IsBound())
-		{
-			postCallback.Execute(WorkerOptions->cFixedDeltaTime);
-		}
-	}
+	PostPhysicsCallbacks.Execute(WorkerOptions->cFixedDeltaTime);
 }
 
 void FJoltWorker::StepPhysics()

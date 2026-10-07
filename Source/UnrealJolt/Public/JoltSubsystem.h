@@ -3,6 +3,7 @@
 #include "Containers/Array.h"
 #include "Containers/Map.h"
 #include "GenericPlatform/GenericPlatformMisc.h"
+#include "JoltCallbackOrder.h"
 #include "JoltContactListener.h"
 #include "JoltDataAsset.h"
 #include "JoltWorker.h"
@@ -348,9 +349,9 @@ public:
 
 	void RayCastShapeNarrowPhase(const UShapeComponent* shape, const FVector& shapeScale, const FTransform& shapeCOM, const FVector& offset, NarrowPhaseQueryCallback& hitCallback);
 
-	uint16 AddPrePhysicsCallback(const TDelegate<void(float)>& callback) const;
+	uint16 AddPrePhysicsCallback(const TDelegate<void(float)>& callback, int32 order = JoltCallbackOrder::Default) const;
 
-	uint16 AddPostPhysicsCallback(const TDelegate<void(float)>& callback) const;
+	uint16 AddPostPhysicsCallback(const TDelegate<void(float)>& callback, int32 order = JoltCallbackOrder::Default) const;
 
 	/** Fired once per frame after InterpolatePhysicsFrame completes. dt = frame delta. */
 	void AddPostInterpolationCallback(const TDelegate<void(float)>& callback);

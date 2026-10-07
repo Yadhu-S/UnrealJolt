@@ -2,6 +2,7 @@
 
 #pragma once
 
+#include "JoltCallbackOrder.h"
 #include "Containers/SpscQueue.h"
 #include "CoreMinimal.h"
 #include "Delegates/Delegate.h"
@@ -43,9 +44,10 @@ public:
 
 	~FJoltWorker();
 
-	uint16 AddPrePhysicsCallback(const TDelegate<void(float)>& callback) { return PrePhysicsCallbacks.Add(callback); }
+	// Run in ascending order
+	uint16 AddPrePhysicsCallback(const TDelegate<void(float)>& callback, int32 order = JoltCallbackOrder::Default) { return PrePhysicsCallbacks.Add(callback, order); }
 
-	uint16 AddPostPhysicsCallback(const TDelegate<void(float)>& callback) { return PostPhysicsCallbacks.Add(callback); }
+	uint16 AddPostPhysicsCallback(const TDelegate<void(float)>& callback, int32 order = JoltCallbackOrder::Default) { return PostPhysicsCallbacks.Add(callback, order); }
 
 	void StepPhysicsWithCallBacks();
 
@@ -56,9 +58,9 @@ private:
 
 	const FJoltWorkerOptions* WorkerOptions = nullptr;
 
-	TArray<TDelegate<void(float)>> PrePhysicsCallbacks;
+	FJoltOrderedCallbacks PrePhysicsCallbacks;
 
-	TArray<TDelegate<void(float)>> PostPhysicsCallbacks;
+	FJoltOrderedCallbacks PostPhysicsCallbacks;
 
 	JPH::PhysicsSystem* PhysicsSystem = nullptr;
 
