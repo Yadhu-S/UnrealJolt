@@ -254,6 +254,7 @@ void UJoltSubsystem::OnWorldBeginPlay(UWorld& InWorld)
 #if WITH_EDITOR
 		GetAllLandscapeHeights(landscape);
 		HandleLandscapeMeshes(landscape);
+		CookExternalStaticGeometry(&InWorld);
 		if (!CookBodies())
 		{
 			UE_LOG(JoltSubSystemLogs, Error, TEXT("Landscape data package wasn't saved!"));
@@ -1790,8 +1791,6 @@ static void AppendWorldSplineMeshTriangles(const UBodySetup* bodySetup, const FT
 
 bool UJoltSubsystem::CreateMergedSplineMeshBody(const TArray<const USplineMeshComponent*>& splineMeshes)
 {
-	constexpr float weldDistanceMeters = 0.001f;
-
 	FBox bounds(ForceInit);
 	for (const USplineMeshComponent* splineMesh : splineMeshes)
 	{
@@ -1814,34 +1813,105 @@ bool UJoltSubsystem::CreateMergedSplineMeshBody(const TArray<const USplineMeshCo
 		AppendWorldSplineMeshTriangles(splineMesh->GetBodySetup(), splineMesh->GetComponentTransform(), origin, materialIndex, worldTriangles);
 	}
 
-	JPH::VertexList			 weldedVertices;
-	JPH::IndexedTriangleList weldedTriangles;
-	JPH::Indexify(worldTriangles, weldedVertices, weldedTriangles, weldDistanceMeters);
-
 	int32 totalSourceVertices = 0;
 	for (const USplineMeshComponent* splineMesh : splineMeshes)
 	{
 		totalSourceVertices += splineMesh->GetBodySetup()->TriMeshGeometries[0]->Particles().Size();
 	}
-	UE_LOG(JoltSubSystemLogs, Log, TEXT("Merged %d spline meshes: %d triangles, %d materials, %d source vertices welded to %d"),
-		splineMeshes.Num(), static_cast<int32>(weldedTriangles.size()), static_cast<int32>(materials.size()),
-		totalSourceVertices, static_cast<int32>(weldedVertices.size()));
+	const FString name = FString::Printf(TEXT("%d spline meshes (%d source vertices)"), splineMeshes.Num(), totalSourceVertices);
+	return CreateMergedStaticMeshBody(worldTriangles, std::move(materials), origin, NAME_None, name);
+}
+
+FOnJoltCollectStaticGeometry UJoltSubsystem::OnCollectStaticGeometry;
+
+void UJoltSubsystem::CookExternalStaticGeometry(const UWorld* world)
+{
+	TArray<FJoltStaticGeometry> geometries;
+	OnCollectStaticGeometry.Broadcast(world, geometries);
+
+	for (const FJoltStaticGeometry& geometry : geometries)
+	{
+		if (geometry.Vertices.IsEmpty() || geometry.Triangles.IsEmpty())
+		{
+			UE_LOG(JoltSubSystemLogs, Warning, TEXT("CookExternalStaticGeometry() '%s' has no triangles, skipped"), *geometry.Name);
+			continue;
+		}
+
+		// Vertices are stored relative to the body in float, so centre it on the geometry.
+		const FVector origin = FBox(geometry.Vertices).GetCenter();
+
+		JPH::PhysicsMaterialList materials;
+		for (const UPhysicalMaterial* material : geometry.Materials)
+		{
+			materials.push_back(GetJoltPhysicsMaterial(material != nullptr ? material : GEngine->DefaultPhysMaterial.Get()));
+		}
+		if (materials.empty())
+		{
+			materials.push_back(GetJoltPhysicsMaterial(GEngine->DefaultPhysMaterial.Get()));
+		}
+
+		const int32 numVertices = geometry.Vertices.Num();
+		auto toJolt = [&geometry, &origin](int32 index) {
+			return JoltHelpers::ToJoltFloat3(FVector3f(geometry.Vertices[index] - origin));
+		};
+
+		JPH::TriangleList worldTriangles;
+		worldTriangles.reserve(geometry.Triangles.Num());
+		int32 invalidTriangles = 0;
+		for (int32 i = 0; i < geometry.Triangles.Num(); ++i)
+		{
+			const FIntVector& t = geometry.Triangles[i];
+			if (t.X < 0 || t.Y < 0 || t.Z < 0 || t.X >= numVertices || t.Y >= numVertices || t.Z >= numVertices)
+			{
+				++invalidTriangles;
+				continue;
+			}
+			// A bad material index fails the mesh build below with a message from Jolt.
+			const uint32 materialIndex = geometry.TriangleMaterials.IsValidIndex(i) ? geometry.TriangleMaterials[i] : 0;
+			// Indices 1/2 swapped: the UE->Jolt Y/Z axis swap reverses winding.
+			worldTriangles.push_back(JPH::Triangle(toJolt(t.X), toJolt(t.Z), toJolt(t.Y), materialIndex));
+		}
+		if (invalidTriangles > 0)
+		{
+			UE_LOG(JoltSubSystemLogs, Error, TEXT("CookExternalStaticGeometry() '%s': %d triangles index past the vertices, skipped them"),
+				*geometry.Name, invalidTriangles);
+		}
+
+		const bool created = CreateMergedStaticMeshBody(worldTriangles, std::move(materials), origin, geometry.Layer, geometry.Name);
+		ensureMsgf(created, TEXT("CookExternalStaticGeometry() '%s' failed"), *geometry.Name);
+	}
+}
+
+/* Welds the triangles (Jolt space, relative to origin) into one static mesh body that CookBodies saves.
+ * One connected mesh lets Jolt flag the flat internal edges inactive, so nothing catches on the seams
+ * https://jrouwe.github.io/JoltPhysicsDocs/5.6.0/index.html#ghost-collisions
+ */
+bool UJoltSubsystem::CreateMergedStaticMeshBody(const JPH::TriangleList& triangles, JPH::PhysicsMaterialList materials, const FVector& origin, FName layerName, const FString& name)
+{
+	constexpr float weldDistanceMeters = 0.001f;
+
+	JPH::VertexList			 weldedVertices;
+	JPH::IndexedTriangleList weldedTriangles;
+	JPH::Indexify(triangles, weldedVertices, weldedTriangles, weldDistanceMeters);
+
+	UE_LOG(JoltSubSystemLogs, Log, TEXT("Merged %s: %d triangles, %d materials, %d vertices after welding"),
+		*name, static_cast<int32>(weldedTriangles.size()), static_cast<int32>(materials.size()), static_cast<int32>(weldedVertices.size()));
 
 	JPH::MeshShapeSettings	meshSettings(std::move(weldedVertices), std::move(weldedTriangles), std::move(materials));
 	JPH::Shape::ShapeResult res = meshSettings.Create();
 	if (!res.IsValid())
 	{
-		UE_LOG(JoltSubSystemLogs, Error, TEXT("Failed to create merged spline mesh. Error: %s"), *FString(res.GetError().c_str()));
+		UE_LOG(JoltSubSystemLogs, Error, TEXT("Failed to create merged mesh for %s. Error: %s"), *name, *FString(res.GetError().c_str()));
 		return false;
 	}
 
-	CreateStaticSplineBody(res.Get(), FTransform(origin));
+	CreateStaticSplineBody(res.Get(), FTransform(origin), layerName);
 	return true;
 }
 
-void UJoltSubsystem::CreateStaticSplineBody(const JPH::Shape* shape, const FTransform& transform)
+void UJoltSubsystem::CreateStaticSplineBody(const JPH::Shape* shape, const FTransform& transform, FName layerName)
 {
-	const JPH::ObjectLayer splineMeshLayer = ResolveObjectLayer(JoltSettings->DefaultStaticLayer);
+	const JPH::ObjectLayer splineMeshLayer = ResolveStaticLayer(layerName);
 	if (splineMeshLayer == JPH::cObjectLayerInvalid)
 	{
 		return;

@@ -76,6 +76,32 @@ typedef const std::function<void(const FVector&, const FVector&, const bool&, co
 
 DECLARE_MULTICAST_DELEGATE(FOnJoltReady);
 
+#if WITH_EDITOR
+/*
+ * This is to be used for cases where you want to cook a body with triangles. Use the OnCollectStaticGeometry callback to pass in the geometry.
+ * Remember that this uses the same path as cooking the landscape splines and close together triangles will be welded together
+ */
+struct FJoltStaticGeometry
+{
+	// Shows up in the cook log.
+	FString Name;
+
+	// Vertex of each triangle
+	TArray<FVector> Vertices;
+
+	// what points make up a triangle. A square made of 2 triangles will have two shared points
+	TArray<FIntVector> Triangles;
+
+	TArray<uint8> TriangleMaterials;
+
+	TArray<const UPhysicalMaterial*> Materials;
+
+	FName Layer = NAME_None;
+};
+
+DECLARE_MULTICAST_DELEGATE_TwoParams(FOnJoltCollectStaticGeometry, const UWorld*, TArray<FJoltStaticGeometry>&);
+#endif
+
 UCLASS()
 class UNREALJOLT_API UJoltSubsystem : public UTickableWorldSubsystem
 {
@@ -401,6 +427,13 @@ public:
 
 	const UPhysicalMaterial* GetUEPhysicsMaterial(const JoltPhysicsMaterial* JoltPhysicsMat) const;
 
+#if WITH_EDITOR
+	/*
+	 * Broadcast by the editor cook (BeginPlay of a level with a landscape, in the editor) after the landscape
+	 */
+	static FOnJoltCollectStaticGeometry OnCollectStaticGeometry;
+#endif
+
 private:
 	const JoltPhysicsMaterial* GetJoltPhysicsMaterial(const UPhysicalMaterial* UEPhysicsMat);
 
@@ -538,7 +571,11 @@ private:
 
 	bool CreateMergedSplineMeshBody(const TArray<const USplineMeshComponent*>& splineMeshes);
 
-	void CreateStaticSplineBody(const JPH::Shape* shape, const FTransform& transform);
+	void CookExternalStaticGeometry(const UWorld* world);
+
+	bool CreateMergedStaticMeshBody(const JPH::TriangleList& triangles, JPH::PhysicsMaterialList materials, const FVector& origin, FName layerName, const FString& name);
+
+	void CreateStaticSplineBody(const JPH::Shape* shape, const FTransform& transform, FName layerName = NAME_None);
 
 #endif
 
