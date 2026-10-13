@@ -141,6 +141,11 @@ public:
 			LevelName.RemoveFromStart(World->StreamingLevelsPrefix);
 		}
 
+		GenerateAssetNamesForLevel(LevelName, OutPackageName, OutAssetName);
+	}
+
+	inline static void GenerateAssetNamesForLevel(const FString& LevelName, FString& OutPackageName, FString& OutAssetName)
+	{
 		OutPackageName = FString::Printf(TEXT("/Game/JoltData/BinaryData_%s"), *LevelName);
 		OutAssetName = FString::Printf(TEXT("BinaryData_%s"), *LevelName);
 	}
