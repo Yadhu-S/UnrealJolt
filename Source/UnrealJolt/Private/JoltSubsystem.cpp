@@ -3,6 +3,7 @@
 #include "Components/CapsuleComponent.h"
 #include "Components/SphereComponent.h"
 #include "Components/StaticMeshComponent.h"
+#include "Components/InstancedStaticMeshComponent.h"
 #include "Components/SplineMeshComponent.h"
 #include "Components/ShapeComponent.h"
 #include "Containers/Array.h"
@@ -572,6 +573,18 @@ void UJoltSubsystem::ExtractPhysicsGeometry(const AActor* actor, PhysicsGeometry
 		{
 			UE_LOG(JoltSubSystemLogs, Error, TEXT("'Simulate physics' turned on for : '%s' which is marked as a jolt body, disabling chaos"), *Comp->GetOwner()->GetActorNameOrLabel());
 			Comp->SetSimulatePhysics(false);
+		}
+
+		// An instanced mesh contributes one shape set per instance, in instance order.
+		if (const UInstancedStaticMeshComponent* ism = Cast<UInstancedStaticMeshComponent>(Comp))
+		{
+			for (int32 i = 0; i < ism->GetInstanceCount(); ++i)
+			{
+				FTransform instanceTransform;
+				ism->GetInstanceTransform(i, instanceTransform, true);
+				ExtractPhysicsGeometry(Comp, instanceTransform, collect);
+			}
+			continue;
 		}
 
 		// We use each component's world transform so components offset relative to the actor are placed correctly once merged into a compound.
